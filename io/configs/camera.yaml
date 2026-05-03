@@ -1,0 +1,48 @@
+# enemy_color: "red"
+enemy_color: "blue"
+
+##########兵种参数##########
+robot_type: "sentry"
+rotation_angle: 0
+
+##########神经网络参数##########
+yolo_name: yolov5
+classify_model: assets/tiny_resnet.onnx
+yolo11_model_path: assets/yolo11.xml
+device: GPU
+min_confidence: 0.8
+use_traditional: true
+roi: 
+  x: 420
+  y: 50
+  width: 600
+  height: 600
+use_roi: false
+
+##########gimbal参数##########
+com_port: "/dev/gimbal"
+
+##########camera参数##########
+camera_name: "hikrobot_sn"
+exposure_ms: 20
+gain: 24
+vid_pid: "2bdf:0001"
+serial_number: "DA8290713"
+
+##########工业相机标定参数##########
+R_gimbal2imubody: [1, 0, 0, 0, 1, 0, 0, 0, 1]
+
+# 重投影误差: 0.1792px
+camera_matrix: [32504.00911263084, 0, 1532.0162245567647, 0, 32616.686243747587, 1046.6393031900541, 0, 0, 1]
+distort_coeffs: [0.52339467406775086, 43.115297379766723, 0.00078266127498807922, -0.010255957344478761, 0.14553043546298375]
+
+# 相机同理想情况的偏角: yaw-0.38 pitch-1.43 roll2.31 degree
+R_camera2gimbal: [0.0056739747400602614, -0.025208630391944115, 0.99966610974085324, -0.99916911170819245, 0.040204441299191096, 0.0066849912551693227, -0.040359536901591712, -0.99887342934607204, -0.024959565851729204]
+t_camera2gimbal: [-0.01715128466662811, 0.0084867164592509065, 0.11721515416813361]
+
+
+##########cboard参数##########
+quaternion_canid: 0x01
+bullet_speed_canid: 0x110
+send_canid: 0xff
+can_interface: "can0"
