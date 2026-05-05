@@ -90,8 +90,6 @@ void Gimbal::send(io::VisionToGimbal VisionToGimbal)
   tx_data_.crc16 = tools::get_crc16(
     reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_) - sizeof(tx_data_.crc16));
 
-  
-
   if (!is_connected_) return;
 
   std::lock_guard<std::mutex> lock(serial_mutex_);
@@ -108,6 +106,13 @@ void Gimbal::send(
   bool control, bool fire, float yaw, float yaw_vel, float yaw_acc, float pitch, float pitch_vel,
   float pitch_acc)
 {
+  if (
+    !std::isfinite(yaw) || !std::isfinite(yaw_vel) || !std::isfinite(yaw_acc) ||
+    !std::isfinite(pitch) || !std::isfinite(pitch_vel) || !std::isfinite(pitch_acc)) {
+    tools::logger()->error("[Gimbal] Invalid control data detected (NaN/Inf)! Packet dropped.");
+    return;
+  }
+
   tx_data_.mode = control ? (fire ? 2 : 1) : 0;
   tx_data_.yaw = yaw;
   tx_data_.yaw_vel = yaw_vel;
@@ -128,6 +133,18 @@ void Gimbal::send(
   } catch (const std::exception & e) {
     tools::logger()->warn("[Gimbal] Failed to write serial: {}", e.what());
   }
+}
+
+
+void Gimbal::send(const VisionToCustom & custom_data)
+{
+  std::lock_guard<std::mutex> lock(serial_mutex_);
+  if (!is_connected_) return;
+
+  VisionToCustom tx = custom_data;
+  tx.crc16 = tools::get_crc16(reinterpret_cast<uint8_t *>(&tx), sizeof(tx) - sizeof(tx.crc16));
+
+  serial_.write(reinterpret_cast<const uint8_t *>(&tx), sizeof(tx));
 }
 
 bool Gimbal::read(uint8_t * buffer, size_t size)
@@ -186,6 +203,18 @@ void Gimbal::read_thread()
     state_.pitch_vel = rx_data_.pitch_vel;
     state_.bullet_speed = rx_data_.bullet_speed;
     state_.bullet_count = rx_data_.bullet_count;
+
+    // SuperCap 数据赋值和计算
+    state_.supercap_power_in = rx_data_.supercap_power_in;
+    state_.supercap_power_out = rx_data_.supercap_power_out;
+    state_.supercap_voltage = rx_data_.supercap_voltage;
+    state_.supercap_temputer = rx_data_.supercap_temputer;
+    state_.supercap_status = rx_data_.supercap_status;
+    // 使用上位机运算能量
+    state_.supercap_cap_energy =
+      0.5f * 5.0f * state_.supercap_voltage *
+      state_
+        .supercap_voltage;  // 注：CAPACITANCE 根据你的实际值修改（假设此处为0.057F，若需修改请自行调节）
 
     switch (rx_data_.mode) {
       case 0:

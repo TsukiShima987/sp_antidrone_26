@@ -14,6 +14,16 @@
 
 namespace io
 {
+struct __attribute__((packed)) VisionToCustom
+{
+  uint8_t head[2] = {'S', 'C'};
+  uint8_t seq;        // 循环累加: 0~255，用于丢包检测与解码器重置
+  uint8_t data[288];  // H.264 码流字节片段
+  uint16_t crc16;
+};
+
+static_assert(sizeof(VisionToCustom) == 293);
+
 struct __attribute__((packed)) GimbalToVision
 {
   uint8_t head[2] = {'S', 'P'};
@@ -25,6 +35,11 @@ struct __attribute__((packed)) GimbalToVision
   float pitch_vel;
   float bullet_speed;
   uint16_t bullet_count;  // 子弹累计发送次数
+  float supercap_power_in;
+  float supercap_power_out;
+  float supercap_voltage;
+  uint8_t supercap_temputer;
+  uint8_t supercap_status;
   uint16_t crc16;
 };
 
@@ -40,8 +55,11 @@ struct __attribute__((packed)) VisionToGimbal
   float pitch;
   float pitch_vel;
   float pitch_acc;
+
   uint16_t crc16;
 };
+
+
 
 static_assert(sizeof(VisionToGimbal) <= 64);
 
@@ -61,6 +79,14 @@ struct GimbalState
   float pitch_vel;
   float bullet_speed;
   uint16_t bullet_count;
+
+  // SuperCap 相关状态
+  float supercap_power_in;
+  float supercap_power_out;
+  float supercap_voltage;
+  float supercap_cap_energy;
+  uint8_t supercap_temputer;
+  uint8_t supercap_status;
 };
 
 class Gimbal
@@ -80,6 +106,8 @@ public:
     float pitch_acc);
 
   void send(io::VisionToGimbal VisionToGimbal);
+
+  void send(const io::VisionToCustom & data);
 
 private:
   serial::Serial serial_;
