@@ -47,14 +47,14 @@ private:
 
     int next_id = 0;
 
-    cv::Mat camera_matrix = (cv::Mat_<double>(3, 3) << 32504.00911263984, 0,                  1532.0162245567647, 
-                                                       0,                 32616.686243747587, 1046.6393031900541, 
-                                                       0,                 0,                  1                  );
-    cv::Mat dist_coeffs = (cv::Mat_<double>(5, 1) << 0.52339467406775086, 
-                                                     43.115297379766723,
-                                                     0.00078266127498807922,
-                                                     -0.010255957344478761,
-                                                     0.1455304354698375     );
+    cv::Mat camera_matrix = (cv::Mat_<double>(3, 3) << 30164.346973727235, 0,                  1585.3978670158735, 
+                                                       0,                  29990.338352363626, 1027.6312267976482, 
+                                                       0,                  0,                  1                  );
+    cv::Mat dist_coeffs = (cv::Mat_<double>(5, 1) << 0.47187615502896024, 
+                                                     23.566194187549524,
+                                                     0.037885849822472041,
+                                                     0.0028823047400091048,
+                                                     0                     );
     const float real_spacing = 0.042f;
 
     std::string config_path = "io/configs/camera.yaml";
@@ -126,6 +126,10 @@ public:
 
             targets.push_back(merged);   // 返回合并后的目标
         }
+        else 
+        {
+            gimbal.send(0, 0, 0, 0, 0, 0, 0, 0);
+        }
 
         return targets;
     }
@@ -146,13 +150,13 @@ public:
         tools::Camera2Gimball c2g;
         tools::Solver solver;
 
-        double temp_distance = cv::norm(cv::Point3f(x_backup, y_backup, z_backup));
-        double temp_yaw = std::atan2(x_backup, z_backup);
-        double temp_pitch = -std::atan2(y_backup, z_backup);
+        // double temp_distance = cv::norm(cv::Point3f(x_backup, y_backup, z_backup));
+        // double temp_yaw = std::atan2(x_backup, z_backup);
+        // double temp_pitch = -std::atan2(y_backup, z_backup);
 
-        auto [laseryaw, laserpitch, laserZ] = c2l.TargetYawPitch_Calculator(temp_distance, temp_yaw, temp_pitch);
+        // auto [laseryaw, laserpitch, laserZ] = c2l.TargetYawPitch_Calculator(temp_distance, temp_yaw, temp_pitch);
 
-        cv::Point3d rel_gim = c2g.Camera2GimballYawPitch2Point(temp_distance * 1000, temp_yaw, temp_pitch);
+        cv::Point3d rel_gim = c2g.Camera2Gimballt(cv::Point3f(x_backup * 1000, y_backup * 1000, z_backup * 1000));
 
         auto q = gimbal.q(timestamp);
         solver.set_R_gimbal2world(q);
@@ -162,11 +166,12 @@ public:
         x_backup = p_world.x();
         y_backup = p_world.y();
         z_backup = p_world.z();
+        std::cout << "p_world: " << p_world << std::endl; 
 
         target.position = cv::Point3f(x_backup, y_backup, z_backup);
         target.distance = cv::norm(target.position);
         target.yaw = -std::atan2(y_backup, x_backup);
-        target.pitch = std::atan2(z_backup, x_backup);
+        target.pitch = std::atan2(z_backup, sqrt(x_backup * x_backup + y_backup * y_backup));
     }
 
 private:
