@@ -7,8 +7,8 @@
 #include <string>
 #include "io/gimbal/gimbal.hpp"
 #include "tools/targetyawpitch.hpp"
-#include "tools/camera2gimbal.hpp"
 #include "tools/solver.hpp"
+#include <yaml-cpp/yaml.h>
 
 struct UAVTarget{
     std::vector<cv::Point2f> roi;
@@ -58,11 +58,33 @@ private:
     const float real_spacing = 0.042f;
 
     std::string config_path = "io/configs/camera.yaml";
+    std::string transform_path = "config/camera2gimbal.yaml";
     io::Gimbal gimbal;
+
+    cv::Mat T_camera2gimbal;
 
 public:
     UAVDetector() : gimbal(config_path){
         cv::namedWindow("binary", 0);
+
+        T_camera2gimbal = cv::Mat::eye(4, 4, CV_64F);   // 先设为单位阵保证安全
+        try {
+            YAML::Node config = YAML::LoadFile(transform_path);
+            if (config["T_camera2gimbal"] && config["T_camera2gimbal"].IsSequence()) {
+                auto rows = config["T_camera2gimbal"];
+                for (size_t i = 0; i < 4; ++i) {
+                    auto row = rows[i];
+                    for (size_t j = 0; j < 4; ++j) {
+                        T_camera2gimbal.at<double>(i, j) = row[j].as<double>();
+                    }
+                }
+            } else {
+                std::cerr << "Missing or invalid T_camera2gimbal in yaml" << std::endl;
+            }
+        } catch (const YAML::Exception& e) {
+            std::cerr << "YAML parse error: " << e.what() << std::endl;
+        }
+
     }
 
     std::vector<UAVTarget> detectUAVs(const cv::Mat& frame, std::chrono::steady_clock::time_point timestamp)
@@ -96,15 +118,12 @@ public:
 
         if (!valid_targets.empty())
         {
-            // ---------- 合并检测框，取整体中心点 ----------
-            // 选择置信度最高的目标作为代表（用于提供灯条间距信息）
             auto best_it = std::max_element(valid_targets.begin(), valid_targets.end(),
                 [](const UAVTarget& a, const UAVTarget& b) {
                     return a.confidence < b.confidence;
                 });
-            UAVTarget merged = *best_it;   // 复制代表目标（保留其灯条、置信度等）
+            UAVTarget merged = *best_it;
 
-            // 计算所有有效目标的平均图像中心
             cv::Point2f avg_center(0.f, 0.f);
             for (const auto& t : valid_targets)
             {
@@ -113,22 +132,20 @@ public:
             avg_center *= (1.0f / valid_targets.size());
             merged.center = avg_center;
 
-            merged.id = assignID(merged);   // 为新合并目标分配ID
+            merged.id = assignID(merged);
 
-            // 使用合并后的目标进行位姿估计（内部会完成世界坐标系转换）
             estimatePose(merged, timestamp);
 
-            // 发送云台指令
             auto gs = gimbal.state();
             std::cout << "ID:" << merged.id << ", Confidence:" << merged.confidence << std::endl;
             std::cout << "yaw:" << merged.yaw * 180.0f / CV_PI << ", pitch" << merged.pitch * 180.0f / CV_PI << std::endl;
             gimbal.send(1, 0, -merged.yaw, 0, 0, merged.pitch, 0, 0);
 
-            targets.push_back(merged);   // 返回合并后的目标
+            targets.push_back(merged);
         }
         else 
         {
-            gimbal.send(0, 0, 0, 0, 0, 0, 0, 0);
+            //gimbal.send(0, 0, 0, 0, 0, 0, 0, 0);
         }
 
         return targets;
@@ -142,36 +159,42 @@ public:
         float cy = camera_matrix.at<double>(1, 2);
         float pixel_spacing = cv::norm(target.top_lb.center - target.bottom_lb.center);
 
-        double z_backup = (fy * real_spacing) / pixel_spacing;
-        double x_backup = (target.center.x - cx) * z_backup / fx;
-        double y_backup = (target.center.y - cy) * z_backup / fy;
+        double z = (fy * real_spacing) / pixel_spacing;
+        double x = (target.center.x - cx) * z / fx;
+        double y = (target.center.y - cy) * z / fy;
+        double distance = cv::norm(cv::Point3f(x, y, z));
 
-        tools::TargetYawPitch c2l;
-        tools::Camera2Gimball c2g;
+        // tools::TargetYawPitch c2l;
+        // auto p_laser = c2l.TargetXYZ(distance);
+        // x = p_laser.x;
+        // y = p_laser.y;
+        // z = p_laser.z;
+
+        cv::Mat p_camera = (cv::Mat_<double>(4, 1) << x*1000, y*1000, z*1000, 1.0); 
+        std::cout << "p_camera" << p_camera << std::endl;
+        cv::Mat p_gimbal_h = T_camera2gimbal * p_camera;
+        std::cout << "p_gimbal_h" << p_gimbal_h << std::endl;
+        cv::Point3d rel_gim(p_gimbal_h.at<double>(0), p_gimbal_h.at<double>(1), p_gimbal_h.at<double>(2));
+
         tools::Solver solver;
-
-        // double temp_distance = cv::norm(cv::Point3f(x_backup, y_backup, z_backup));
-        // double temp_yaw = std::atan2(x_backup, z_backup);
-        // double temp_pitch = -std::atan2(y_backup, z_backup);
-
-        // auto [laseryaw, laserpitch, laserZ] = c2l.TargetYawPitch_Calculator(temp_distance, temp_yaw, temp_pitch);
-
-        cv::Point3d rel_gim = c2g.Camera2Gimballt(cv::Point3f(x_backup * 1000, y_backup * 1000, z_backup * 1000));
-
         auto q = gimbal.q(timestamp);
         solver.set_R_gimbal2world(q);
         Eigen::Vector3d p_gimbal(rel_gim.x, rel_gim.y, rel_gim.z);
         Eigen::Vector3d p_world = solver.R_gimbal2world() * p_gimbal;
 
-        x_backup = p_world.x();
-        y_backup = p_world.y();
-        z_backup = p_world.z();
+        x = p_world.x();
+        y = p_world.y();
+        z = p_world.z();
         std::cout << "p_world: " << p_world << std::endl; 
 
-        target.position = cv::Point3f(x_backup, y_backup, z_backup);
+        auto gs = gimbal.state();
+        std::cout << "gimbal yaw: " << gs.yaw / CV_PI * 180.0 << std::endl;
+        std::cout << "gimbal pitch: " << gs.pitch / CV_PI * 180.0 << std::endl;
+
+        target.position = cv::Point3f(x, y, z);
         target.distance = cv::norm(target.position);
-        target.yaw = -std::atan2(y_backup, x_backup);
-        target.pitch = std::atan2(z_backup, sqrt(x_backup * x_backup + y_backup * y_backup));
+        target.yaw = -std::atan2(y, x);
+        target.pitch = -std::atan2(z, sqrt(x * x + y * y));
     }
 
 private:

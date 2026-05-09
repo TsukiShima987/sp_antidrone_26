@@ -40,7 +40,7 @@ namespace tools
         return std::make_tuple(target_yaw, target_pitch, closest_point.z());
     }
 
-    cv::Point3d TargetYawPitch::TargetXYZ(double dist,double current_yaw, double current_pitch)
+    cv::Point3d TargetYawPitch::TargetXYZ(double dist)
     {
         Eigen::Vector3d target_cam(0, 0, dist*1000);
         Eigen::Vector3d v = target_cam - line_point;

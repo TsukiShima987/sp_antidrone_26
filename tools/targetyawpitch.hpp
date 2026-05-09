@@ -23,7 +23,7 @@ namespace tools
     TargetYawPitch();
 
     std::tuple<double, double, double> TargetYawPitch_Calculator(double dist,double current_yaw, double current_pitch);
-    cv::Point3d TargetXYZ(double dist,double current_yaw, double current_pitch);
+    cv::Point3d TargetXYZ(double dist);
 
   private:
     Eigen::Vector3d line_point;      
