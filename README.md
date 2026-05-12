@@ -1,0 +1,1 @@
+export LD_LIBRARY_PATH=/home/squirtle/TensorRT-8.6.1.6/lib:$LD_LIBRARY_PATH
