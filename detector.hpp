@@ -9,6 +9,17 @@
 #include "tools/targetyawpitch.hpp"
 #include "tools/solver.hpp"
 #include <yaml-cpp/yaml.h>
+#include <iostream>
+#include <thread>
+#include <stack>
+#include <mutex>
+#include <future>
+#include <functional>
+#include <atomic>
+#include <condition_variable>
+#include <queue>
+#include "TensorRT-YOLO/include/trtyolo.hpp"
+
 
 struct UAVTarget{
     std::vector<cv::Point2f> roi;
@@ -31,6 +42,30 @@ struct UAVTarget{
 
     UAVTarget() : confidence(0), id(-1), distance(0), yaw(0), pitch(0) {}
 };
+
+// Plain structs replacing ROS messages
+struct Bbox {
+    int x_min, y_min, x_max, y_max;
+    int class_id;
+    float class_confidence;
+
+    float distance;
+    float yaw;
+    float pitch;
+    cv::Point3f position;
+    cv::Point3f velocity;
+
+    float confidence;
+    int id;
+};
+
+struct CarBbox {
+    int img_height;
+    int img_width;
+    std::vector<Bbox> bboxs;
+    // No timestamp – removed to eliminate ROS dependency
+};
+
 
 class UAVDetector{
 private:
@@ -56,13 +91,15 @@ private:
                                                      0.0028823047400091048,
                                                      0                     );
     const float real_spacing = 0.042f;
-
+    const float real_object_height = 0.067f;
     std::string config_path = "io/configs/camera.yaml";
     std::string transform_path = "config/camera2gimbal.yaml";
     io::Gimbal gimbal;
+    std::shared_ptr<trtyolo::DetectModel> model_;
 
     cv::Mat T_camera2gimbal;
-
+    bool yolo_detection;
+    bool uav_detection;
 public:
     UAVDetector() : gimbal(config_path){
         cv::namedWindow("binary", 0);
@@ -85,11 +122,34 @@ public:
             std::cerr << "YAML parse error: " << e.what() << std::endl;
         }
 
+            // declare_parameter<std::string>("config_file", "");
+        std::string yolo_config_file = "config/antidrone.yaml";
+        // get_parameter("config_file", config_file);
+        const auto yaml_yolo_config = YAML::LoadFile(yolo_config_file);
+
+        std::string drone_engine_file = yaml_yolo_config["drone_engine_file"].as<std::string>();
+        yolo_detection = yaml_yolo_config["yolo_option"].as<bool>();
+        uav_detection = yaml_yolo_config["uav_option"].as<bool>();
+        trtyolo::InferOption option;
+        option.enableSwapRB();
+        model_ = std::make_shared<trtyolo::DetectModel>(drone_engine_file, option);
+        std::cout << "DetectionAntiDrone::DetectionAntiDrone()" << std::endl;
+
+
     }
 
     std::vector<UAVTarget> detectUAVs(const cv::Mat& frame, std::chrono::steady_clock::time_point timestamp)
     {
         std::vector<UAVTarget> targets;   // 最终返回结果（合并后最多一个）
+        if (yolo_detection)
+        {
+            Bbox maxbbox = detect_once(frame);
+            estimatePoseYolo(maxbbox, timestamp);
+            std::cout << "ID:" << maxbbox.id << ", Confidence:" << maxbbox.confidence << std::endl;
+            std::cout << "yaw:" << maxbbox.yaw * 180.0f / CV_PI << ", pitch" << maxbbox.pitch * 180.0f / CV_PI << std::endl;
+            gimbal.send(1, 0, -maxbbox.yaw, 0, 0, maxbbox.pitch, 0, 0);
+        }
+        
 
         cv::Mat gray;
         cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
@@ -135,12 +195,13 @@ public:
             merged.id = assignID(merged);
 
             estimatePose(merged, timestamp);
-
             auto gs = gimbal.state();
             std::cout << "ID:" << merged.id << ", Confidence:" << merged.confidence << std::endl;
             std::cout << "yaw:" << merged.yaw * 180.0f / CV_PI << ", pitch" << merged.pitch * 180.0f / CV_PI << std::endl;
-            gimbal.send(1, 0, -merged.yaw, 0, 0, merged.pitch, 0, 0);
-
+            if (uav_detection)
+            {
+                gimbal.send(1, 0, -merged.yaw, 0, 0, merged.pitch, 0, 0);
+            }
             targets.push_back(merged);
         }
         else 
@@ -151,6 +212,54 @@ public:
         return targets;
     }
 
+    void estimatePoseYolo(Bbox& bbox, std::chrono::steady_clock::time_point timestamp)
+{
+        float cx_pixel = (bbox.x_min + bbox.x_max) / 2.0f;
+        float cy_pixel = (bbox.y_min + bbox.y_max) / 2.0f;
+        cv::Point2f center_pixel(cx_pixel, cy_pixel);
+
+        float pixel_spacing = bbox.y_max - bbox.y_min;   // height in pixels
+
+        float fx = camera_matrix.at<double>(0, 0);
+        float fy = camera_matrix.at<double>(1, 1);
+        float cx = camera_matrix.at<double>(0, 2);
+        float cy = camera_matrix.at<double>(1, 2);
+
+        double z = (fy * real_object_height) / pixel_spacing;
+        double x = (center_pixel.x - cx) * z / fx;
+        double y = (center_pixel.y - cy) * z / fy;
+
+        double distance = cv::norm(cv::Point3f(x, y, z));
+
+        cv::Mat p_camera = (cv::Mat_<double>(4, 1) << x*1000, y*1000, z*1000, 1.0);
+        std::cout << "p_camera" << p_camera << std::endl;
+
+        cv::Mat p_gimbal_h = T_camera2gimbal * p_camera;
+        std::cout << "p_gimbal_h" << p_gimbal_h << std::endl;
+        cv::Point3d rel_gim(p_gimbal_h.at<double>(0), p_gimbal_h.at<double>(1), p_gimbal_h.at<double>(2));
+
+        tools::Solver solver;
+        auto q = gimbal.q(timestamp);
+        solver.set_R_gimbal2world(q);
+        Eigen::Vector3d p_gimbal(rel_gim.x, rel_gim.y, rel_gim.z);
+        Eigen::Vector3d p_world = solver.R_gimbal2world() * p_gimbal;
+
+        double world_x = p_world.x();
+        double world_y = p_world.y();
+        double world_z = p_world.z();
+        std::cout << "p_world: " << p_world << std::endl;
+
+        auto gs = gimbal.state();
+        std::cout << "gimbal yaw: " << gs.yaw / CV_PI * 180.0 << std::endl;
+        std::cout << "gimbal pitch: " << gs.pitch / CV_PI * 180.0 << std::endl;
+
+        // Store results (adjust target structure as needed)
+        bbox.position = cv::Point3f(world_x, world_y, world_z);
+        bbox.distance = cv::norm(bbox.position);
+        bbox.yaw = -std::atan2(world_y, world_x);
+        bbox.pitch = -std::atan2(world_z, sqrt(world_x * world_x + world_y * world_y));
+
+}
     void estimatePose(UAVTarget& target, std::chrono::steady_clock::time_point timestamp)
     {
         float fx = camera_matrix.at<double>(0, 0);
@@ -197,7 +306,83 @@ public:
         target.pitch = -std::atan2(z, sqrt(x * x + y * y));
     }
 
+Bbox detect_once(const cv::Mat& frame)   // Return type changed to Bbox
+{
+    cv::Mat image = frame;
+
+    CarBbox car_bboxs;
+    car_bboxs.img_height = image.rows;
+    car_bboxs.img_width = image.cols;
+
+    cv::cvtColor(image, image, cv::COLOR_BGR2RGB);
+
+    trtyolo::Image input_image(image.data, image.cols, image.rows);
+    trtyolo::DetectRes result = model_->predict(input_image);
+
+    Bbox max_confidence_bbox;
+    max_confidence_bbox.class_confidence = -1.0f;  // Initialize as invalid
+
+    for (size_t j = 0; j < result.num; j++)
+    {
+        cv::Rect r = get_rect(image, result.boxes[j]);
+
+        Bbox bbox;
+        bbox.x_min = r.x;
+        bbox.y_min = r.y;
+        bbox.x_max = r.x + r.width;
+        bbox.y_max = r.y + r.height;
+        
+        bbox.class_confidence = result.scores[j];   // confidence score
+        bbox.class_id = result.classes[j];          // class ID (if needed)         // If available, else -1
+
+        car_bboxs.bboxs.push_back(bbox);
+
+        // Update max confidence bbox
+        if (bbox.class_confidence > max_confidence_bbox.class_confidence) {
+            max_confidence_bbox = bbox;
+        }
+
+        r &= cv::Rect(0, 0, image.cols, image.rows);
+        cv::rectangle(image, r, cv::Scalar(0x27, 0xC1, 0x36), 2);
+        cv::Mat region = image(r);
+    }
+
+    cv::cvtColor(image, image, cv::COLOR_RGB2BGR);
+    draw_car_bbox(car_bboxs, image);
+
+    cv::resize(image, image, cv::Size(1500, 1000));
+    cv::imshow("yolo_detection_result", image);
+    cv::waitKey(1);
+
+    return max_confidence_bbox;   
+}
+
 private:
+
+    cv::Rect get_rect(cv::Mat &img, const trtyolo::Box& bbox)
+    {
+        float left = bbox.left;
+        float top = bbox.top;
+        float right = bbox.right;
+        float bottom = bbox.bottom;
+        cv::Rect r = cv::Rect(cv::Point(left, top), cv::Point(right, bottom));
+        return r;
+    }
+
+    void draw_car_bbox(CarBbox car_bboxs, cv::Mat& frame)
+    {
+        for (auto bbox : car_bboxs.bboxs)
+        {
+            cv::Scalar color = (bbox.class_id < 6) ? cv::Scalar(255, 128, 0) : cv::Scalar(50, 50, 255);
+            if (bbox.x_min > 0 || bbox.y_min > 20 || bbox.x_max < frame.cols - 50 || bbox.y_max < frame.rows)
+            {
+                cv::rectangle(frame, cv::Point(bbox.x_min, bbox.y_min), cv::Point(bbox.x_max, bbox.y_max), color, 10);
+                cv::putText(frame, std::to_string((bbox.class_id) % 6 + 1), cv::Point(bbox.x_min + 40, bbox.y_min - 10), cv::FONT_HERSHEY_PLAIN, 6, color, 6);
+                cv::circle(frame, cv::Point((bbox.x_min+bbox.x_max)/2, (bbox.y_max + bbox.y_min)/2), 2, color, 10);
+            }
+        }
+    }
+
     void multiThresholdBinary(const cv::Mat& src, std::vector<cv::Mat>& binarys)
     {
         std::vector<int> thresholds = {125};
@@ -373,7 +558,6 @@ private:
 
         return vertices;
     }
-
     float calculateConfidence(const UAVTarget& target)
     {
         float confidence = 0;

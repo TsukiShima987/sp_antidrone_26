@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 find_package(yaml-cpp REQUIRED)
-
+find_package(fmt REQUIRED)                     # <-- ADD this
 add_subdirectory(serial)
 
 # 创建目标 io
@@ -36,7 +36,7 @@ else()
 endif()
 
 target_link_libraries(io MvCameraControl MVSDK usb-1.0 yaml-cpp serial)
-
+target_link_libraries(io fmt::fmt) 
 ################## 检查 ROS 环境 ##################
 find_package(ament_cmake QUIET)
 find_package(rclcpp QUIET)

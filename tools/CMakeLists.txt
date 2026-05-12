@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
-
+find_package(fmt REQUIRED)
+find_package(spdlog REQUIRED)  
 add_library(tools OBJECT 
     exiter.cpp
     extended_kalman_filter.cpp
@@ -16,3 +17,5 @@ add_library(tools OBJECT
     camera2gimbal.cpp
     solver.cpp
 )
+target_link_libraries(tools PUBLIC fmt::fmt spdlog::spdlog)
+target_include_directories(tools PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
