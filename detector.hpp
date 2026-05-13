@@ -6,7 +6,6 @@
 #include <cmath>
 #include <string>
 #include "io/gimbal/gimbal.hpp"
-#include "tools/targetyawpitch.hpp"
 #include "tools/solver.hpp"
 #include <yaml-cpp/yaml.h>
 #include <Eigen/Dense>
@@ -46,7 +45,7 @@ private:
         float max_angle_diff = 30.0;
         float min_spacing_ratio = 1.0;
         float max_spacing_ratio = 4.0;
-        float min_confidence = 0.8;
+        float min_confidence = 0.5;
     } params;
 
     int next_id = 0;
@@ -71,7 +70,7 @@ public:
     UAVDetector() : gimbal(config_path){
         cv::namedWindow("binary", 0);
 
-        T_camera2gimbal = cv::Mat::eye(4, 4, CV_64F);   // 先设为单位阵保证安全
+        T_camera2gimbal = cv::Mat::eye(4, 4, CV_64F);
         try {
             YAML::Node config = YAML::LoadFile(transform_path);
             if (config["T_camera2gimbal"] && config["T_camera2gimbal"].IsSequence()) {
@@ -93,7 +92,7 @@ public:
 
     std::vector<UAVTarget> detectUAVs(const cv::Mat& frame, std::chrono::steady_clock::time_point timestamp)
     {
-        std::vector<UAVTarget> targets;   // 最终返回结果（合并后最多一个）
+        std::vector<UAVTarget> targets;
 
         cv::Mat gray;
         cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
@@ -109,7 +108,6 @@ public:
 
         removeDuplicates(light_pairs);
 
-        // ---------- 收集所有有效目标----------
         std::vector<UAVTarget> valid_targets;
         for (const auto& pair : light_pairs)
         {
@@ -128,13 +126,13 @@ public:
                 });
             UAVTarget merged = *best_it;
 
-            cv::Point2f avg_center(0.f, 0.f);
-            for (const auto& t : valid_targets)
-            {
-                avg_center += t.center;
-            }
-            avg_center *= (1.0f / valid_targets.size());
-            merged.center = avg_center;
+            // cv::Point2f avg_center(0.f, 0.f);
+            // for (const auto& t : valid_targets)
+            // {
+            //     avg_center += t.center;
+            // }
+            // avg_center *= (1.0f / valid_targets.size());
+            // merged.center = avg_center;
 
             merged.id = assignID(merged);
 
@@ -169,12 +167,6 @@ public:
         double distance = cv::norm(cv::Point3f(x, y, z));
         cv::Mat p_cam = (cv::Mat_<double>(4, 1) << x*1000, y*1000, z*1000, 1.0); 
         std::cout << "p_cam" << p_cam << std::endl;
-
-        // tools::TargetYawPitch c2l;
-        // auto p_laser = c2l.TargetXYZ(distance);
-        // x = p_laser.x;
-        // y = p_laser.y;
-        // z = p_laser.z;
 
         cv::Point3d aim_point = computeLaserAimPoint(cv::Point3d(x, y, z));
         x = -aim_point.x;
@@ -213,25 +205,16 @@ private:
     {
         using namespace Eigen;
 
-        // 激光安装参数 (mm) —— 从原 TargetYawPitch 拷贝
         const Vector3d S0(36.71872987, -7.4622397, 0.0);
-        Vector3d d0(0.00309691, 0.00421795, 0.99998631);
+        Vector3d d0(0.00409691, 0.00021795, 0.99998631);
         d0.normalize();
 
-        // ⚠️ 实际激光应向前发射（与相机光轴大致同向），
-        // 但参数指向 -Z ，这里强制翻转到 +Z 半球
-        if (d0.z() < 0.0) {
-            d0 = -d0;
-        }
-
-        // 目标坐标 → mm
         Vector3d p_cam(target_cam.x * 1000.0,
                     target_cam.y * 1000.0,
                     target_cam.z * 1000.0);
         double dist_mm = p_cam.norm();
         if (dist_mm < 1e-6) return target_cam;
 
-        // 求解无自转旋转
         const double tol = 1e-9, step = 1e-7;
         const int maxIter = 50;
 
@@ -309,7 +292,7 @@ private:
 
     void multiThresholdBinary(const cv::Mat& src, std::vector<cv::Mat>& binarys)
     {
-        std::vector<int> thresholds = {125};
+        std::vector<int> thresholds = {50};
 
         for (int thresh : thresholds)
         {
