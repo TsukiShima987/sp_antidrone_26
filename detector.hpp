@@ -6,7 +6,6 @@
 #include <cmath>
 #include <string>
 #include "io/gimbal/gimbal.hpp"
-#include "tools/targetyawpitch.hpp"
 #include "tools/solver.hpp"
 #include <yaml-cpp/yaml.h>
 #include <iostream>
@@ -19,6 +18,10 @@
 #include <condition_variable>
 #include <queue>
 #include "TensorRT-YOLO/include/trtyolo.hpp"
+#include <Eigen/Dense>
+#include <Eigen/Geometry>
+#include <optional>
+#include <limits>
 
 
 struct UAVTarget{
@@ -77,7 +80,7 @@ private:
         float max_angle_diff = 30.0;
         float min_spacing_ratio = 1.0;
         float max_spacing_ratio = 4.0;
-        float min_confidence = 0.8;
+        float min_confidence = 0.5;
     } params;
 
     int next_id = 0;
@@ -184,13 +187,13 @@ public:
                 });
             UAVTarget merged = *best_it;
 
-            cv::Point2f avg_center(0.f, 0.f);
-            for (const auto& t : valid_targets)
-            {
-                avg_center += t.center;
-            }
-            avg_center *= (1.0f / valid_targets.size());
-            merged.center = avg_center;
+            // cv::Point2f avg_center(0.f, 0.f);
+            // for (const auto& t : valid_targets)
+            // {
+            //     avg_center += t.center;
+            // }
+            // avg_center *= (1.0f / valid_targets.size());
+            // merged.center = avg_center;
 
             merged.id = assignID(merged);
 
@@ -230,6 +233,15 @@ public:
         double y = (center_pixel.y - cy) * z / fy;
 
         double distance = cv::norm(cv::Point3f(x, y, z));
+
+        cv::Mat p_cam = (cv::Mat_<double>(4, 1) << x*1000, y*1000, z*1000, 1.0); 
+        std::cout << "p_cam" << p_cam << std::endl;
+
+
+        cv::Point3d aim_point = computeLaserAimPoint(cv::Point3d(x, y, z));
+        x = -aim_point.x;
+        y = -aim_point.y;
+        z = aim_point.z;
 
         cv::Mat p_camera = (cv::Mat_<double>(4, 1) << x*1000, y*1000, z*1000, 1.0);
         std::cout << "p_camera" << p_camera << std::endl;
@@ -273,11 +285,19 @@ public:
         double y = (target.center.y - cy) * z / fy;
         double distance = cv::norm(cv::Point3f(x, y, z));
 
+        cv::Mat p_cam = (cv::Mat_<double>(4, 1) << x*1000, y*1000, z*1000, 1.0); 
+        std::cout << "p_cam" << p_cam << std::endl;
+
         // tools::TargetYawPitch c2l;
         // auto p_laser = c2l.TargetXYZ(distance);
         // x = p_laser.x;
         // y = p_laser.y;
         // z = p_laser.z;
+
+        cv::Point3d aim_point = computeLaserAimPoint(cv::Point3d(x, y, z));
+        x = -aim_point.x;
+        y = -aim_point.y;
+        z = aim_point.z;
 
         cv::Mat p_camera = (cv::Mat_<double>(4, 1) << x*1000, y*1000, z*1000, 1.0); 
         std::cout << "p_camera" << p_camera << std::endl;
@@ -358,6 +378,103 @@ Bbox detect_once(const cv::Mat& frame)   // Return type changed to Bbox
 }
 
 private:
+    cv::Point3d computeLaserAimPoint(const cv::Point3d& target_cam)
+    {
+        using namespace Eigen;
+
+        // 激光安装参数 (mm) —— 从原 TargetYawPitch 拷贝
+        const Vector3d S0(36.71872987, -7.4622397, 0.0);
+        Vector3d d0(0.00409691, 0.00021795, 0.99998631);
+        d0.normalize();
+
+        // // ⚠️ 实际激光应向前发射（与相机光轴大致同向），
+        // // 但参数指向 -Z ，这里强制翻转到 +Z 半球
+        // if (d0.z() < 0.0) {
+        //     d0 = -d0;
+        // }
+
+        // 目标坐标 → mm
+        Vector3d p_cam(target_cam.x * 1000.0,
+                    target_cam.y * 1000.0,
+                    target_cam.z * 1000.0);
+        double dist_mm = p_cam.norm();
+        if (dist_mm < 1e-6) return target_cam;
+
+        // 求解无自转旋转
+        const double tol = 1e-9, step = 1e-7;
+        const int maxIter = 50;
+
+        auto buildR = [](double a, double t) -> Matrix3d {
+            return AngleAxisd(t, Vector3d(cos(a), sin(a), 0)).toRotationMatrix();
+        };
+
+        auto residual = [&](double a, double t) -> Vector2d {
+            Matrix3d R = buildR(a, t);
+            Vector3d diff = R * p_cam - S0;
+            return diff.cross(d0).head<2>();
+        };
+
+        auto normalize = [](double &a, double &t) {
+            if (t < 0) { t = -t; a += M_PI; }
+            a = fmod(a, 2 * M_PI);
+            if (a < 0) a += 2 * M_PI;
+        };
+
+        auto valid = [&](double a, double t) -> bool {
+            Matrix3d R = buildR(a, t);
+            Vector3d diff = R * p_cam - S0;
+            return diff.dot(d0) > 0 && diff.cross(d0).norm() < 1e-8;
+        };
+
+        std::vector<double> seedsA = {0., M_PI/2, M_PI, 3*M_PI/2};
+        std::vector<double> seedsT = {M_PI/4, M_PI/2, 3*M_PI/4};
+        double bestA = 0, bestT = 0, bestRes = 1e20;
+
+        for (double a0 : seedsA) {
+            for (double t0 : seedsT) {
+                double a = a0, t = t0;
+                normalize(a, t);
+                for (int i = 0; i < maxIter; ++i) {
+                    Vector2d f = residual(a, t);
+                    double r = f.norm();
+                    if (r < tol) {
+                        if (valid(a, t)) { bestA = a; bestT = t; bestRes = r; goto done; }
+                        else break;
+                    }
+                    Matrix2d J;
+                    for (int j = 0; j < 2; ++j) {
+                        double da = (j == 0 ? step : 0), dt = (j == 1 ? step : 0);
+                        J.col(j) = (residual(a + da, t + dt) - f) / step;
+                    }
+                    Vector2d delta = J.fullPivLu().solve(-f);
+                    double anew = a + delta(0), tnew = t + delta(1);
+                    normalize(anew, tnew);
+                    if (std::abs(delta(0)) < 1e-12 && std::abs(delta(1)) < 1e-12) {
+                        if (valid(anew, tnew)) {
+                            bestA = anew; bestT = tnew;
+                            bestRes = residual(anew, tnew).norm();
+                            goto done;
+                        }
+                        break;
+                    }
+                    a = anew; t = tnew;
+                }
+            }
+        }
+    done:
+        if (bestRes < 1e-7 && valid(bestA, bestT)) {
+            Matrix3d R = buildR(bestA, bestT);
+            // 新光轴方向（单位向量）
+            Vector3d aim_dir = R * Vector3d(0, 0, 1);
+            // 保持原目标距离，计算新瞄准点坐标 (mm)
+            Vector3d aim_pt_mm = aim_dir * dist_mm;
+            return cv::Point3d(aim_pt_mm.x() / 1000.0,
+                            aim_pt_mm.y() / 1000.0,
+                            aim_pt_mm.z() / 1000.0);
+        }
+        // 无解时回退原目标点
+        return target_cam;
+    }
 
     cv::Rect get_rect(cv::Mat &img, const trtyolo::Box& bbox)
     {
@@ -385,7 +502,7 @@ private:
 
     void multiThresholdBinary(const cv::Mat& src, std::vector<cv::Mat>& binarys)
     {
-        std::vector<int> thresholds = {125};
+        std::vector<int> thresholds = {50};
 
         for (int thresh : thresholds)
         {

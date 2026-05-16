@@ -1,4 +1,4 @@
-drone_engine_file: "./src/antidrone/models/antidrone.engine"
+drone_engine_file: "./antidronev2.engine"
 
 yolo_option: true
 uav_option: true
