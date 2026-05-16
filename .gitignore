@@ -1,6 +1,9 @@
 .vscode/
 build/
 logs/
+**.onnx
+**.engine
+**.zip
 **.pt
 **.engine
 **.onnx
