@@ -3,5 +3,4 @@ build/
 logs/
 **.onnx
 **.engine
-**.pt
 **.zip
