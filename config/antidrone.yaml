@@ -1,7 +1,7 @@
-drone_engine_file: "./models/best.engine"
+drone_engine_file: "./models/2/antidronev2.engine"
 
 yolo_option: true
-uav_option: true
+uav_option: false
 
 
 
