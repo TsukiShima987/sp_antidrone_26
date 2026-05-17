@@ -13,7 +13,6 @@ add_library(tools OBJECT
     logger.cpp
     pid.cpp
     crc.cpp
-    targetyawpitch.cpp
     camera2gimbal.cpp
     solver.cpp
 )
