@@ -147,10 +147,14 @@ public:
         if (yolo_detection)
         {
             Bbox maxbbox = detect_once(frame);
-            estimatePoseYolo(maxbbox, timestamp);
-            std::cout << "ID:" << maxbbox.id << ", Confidence:" << maxbbox.confidence << std::endl;
-            std::cout << "yaw:" << maxbbox.yaw * 180.0f / CV_PI << ", pitch" << maxbbox.pitch * 180.0f / CV_PI << std::endl;
-            gimbal.send(1, 0, -maxbbox.yaw, 0, 0, maxbbox.pitch, 0, 0);
+            std::cout << "ID:" << maxbbox.class_id << ", Confidence:" << maxbbox.class_confidence << std::endl;
+            if (maxbbox.class_confidence > 0.05)
+            {
+                estimatePoseYolo(maxbbox, timestamp);
+                std::cout << "ID:" << maxbbox.class_id << ", Confidence:" << maxbbox.class_confidence << std::endl;
+                std::cout << "yaw:" << maxbbox.yaw * 180.0f / CV_PI << ", pitch" << maxbbox.pitch * 180.0f / CV_PI << std::endl;
+                gimbal.send(1, 0, -maxbbox.yaw, 0, 0, maxbbox.pitch, 0, 0);
+            }
         }
         
 
@@ -199,6 +203,10 @@ public:
 
             estimatePose(merged, timestamp);
             auto gs = gimbal.state();
+            auto g_q = gimbal.q(timestamp);
+            std::cout << "gimbal state - yaw: " << gs.yaw / CV_PI * 180.0 << ", pitch: " << gs.pitch / CV_PI * 180.0 << std::endl;
+            std::cout << "gimbal orientation (quaternion) - x: " << g_q.x() << ", y: " << g_q.y() << ", z: " << g_q.z() << ", w: " << g_q.w() << std::endl;
+            
             std::cout << "ID:" << merged.id << ", Confidence:" << merged.confidence << std::endl;
             std::cout << "yaw:" << merged.yaw * 180.0f / CV_PI << ", pitch" << merged.pitch * 180.0f / CV_PI << std::endl;
             if (uav_detection)
@@ -351,7 +359,7 @@ Bbox detect_once(const cv::Mat& frame)   // Return type changed to Bbox
         bbox.y_min = r.y;
         bbox.x_max = r.x + r.width;
         bbox.y_max = r.y + r.height;
-        
+        std::cout << "Confidence:" << result.scores[j] << ", ID:" << result.classes[j] << std::endl;
         bbox.class_confidence = result.scores[j];   // confidence score
         bbox.class_id = result.classes[j];          // class ID (if needed)         // If available, else -1
 
@@ -384,7 +392,7 @@ private:
 
         // 激光安装参数 (mm) —— 从原 TargetYawPitch 拷贝
         const Vector3d S0(36.71872987, -7.4622397, 0.0);
-        Vector3d d0(0.00409691, 0.00021795, 0.99998631);
+        Vector3d d0(0.00439691, 0.00026795, 0.99998631);
         d0.normalize();
 
         // // ⚠️ 实际激光应向前发射（与相机光轴大致同向），

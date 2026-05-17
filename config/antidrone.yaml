@@ -1,7 +1,7 @@
 drone_engine_file: "./models/2/antidronev2.engine"
 
-yolo_option: true
-uav_option: false
+yolo_option: false
+uav_option: true
 
 
 
