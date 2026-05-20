@@ -120,6 +120,7 @@ void Gimbal::send(
   tx_data_.pitch = pitch;
   tx_data_.pitch_vel = pitch_vel;
   tx_data_.pitch_acc = pitch_acc;
+  tx_data_.target = 8;  // 默认无目标
   tx_data_.crc16 = tools::get_crc16(
     reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_) - sizeof(tx_data_.crc16));
 
@@ -150,9 +151,11 @@ void Gimbal::send(const VisionToCustom & custom_data)
 bool Gimbal::read(uint8_t * buffer, size_t size)
 {
   try {
-    return serial_.read(buffer, size) == size;
+    auto result = serial_.read(buffer, size);
+    // std::cout << "Read " << result << " bytes, expected " << size << " bytes." << std::endl;
+    return result == size;
   } catch (const std::exception & e) {
-    // tools::logger()->warn("[Gimbal] Failed to read serial: {}", e.what());
+    tools::logger()->warn("[Gimbal] Failed to read serial: {}", e.what());
     return false;
   }
 }
@@ -161,17 +164,23 @@ void Gimbal::read_thread()
 {
   tools::logger()->info("[Gimbal] read_thread started.");
   int error_count = 0;
+  int head_read_failures = 0;
+  int body_read_failures = 0;
 
   while (!quit_) {
-    if (error_count > 5000) {
-      error_count = 0;
-      tools::logger()->warn("[Gimbal] Too many errors, attempting to reconnect...");
-      reconnect();
-      continue;
-    }
+    // if (error_count > 5000) {
+    //   tools::logger()->info("[Gimbal] Final error counts: head_read_failures={}, body_read_failures={}", head_read_failures, body_read_failures);
+
+    //   error_count = 0;
+    //   tools::logger()->warn("[Gimbal] Too many errors, attempting to reconnect...");
+    //   tools::logger()->warn("[Gimbal] Error summary before reconnect: head_read_failures={}, body_read_failures={}", head_read_failures, body_read_failures);
+    //   reconnect();
+    //   continue;
+    // }
 
     if (!read(reinterpret_cast<uint8_t *>(&rx_data_), sizeof(rx_data_.head))) {
       error_count++;
+      head_read_failures++;
       continue;
     }
 
@@ -183,6 +192,7 @@ void Gimbal::read_thread()
           reinterpret_cast<uint8_t *>(&rx_data_) + sizeof(rx_data_.head),
           sizeof(rx_data_) - sizeof(rx_data_.head))) {
       error_count++;
+      body_read_failures++;
       continue;
     }
 
@@ -237,6 +247,7 @@ void Gimbal::read_thread()
   }
 
   tools::logger()->info("[Gimbal] read_thread stopped.");
+  tools::logger()->info("[Gimbal] Final error counts: head_read_failures={}, body_read_failures={}", head_read_failures, body_read_failures);
 }
 
 void Gimbal::reconnect()
