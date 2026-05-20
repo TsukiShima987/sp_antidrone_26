@@ -55,6 +55,7 @@ struct __attribute__((packed)) VisionToGimbal
   float pitch;
   float pitch_vel;
   float pitch_acc;
+  uint8_t target;  //0:英雄,1:工程,2:3号步兵,3:4号步兵,4:5号步兵,5:哨兵,6:前哨,7:基地,8:无目标,9:小符,10:大符
 
   uint16_t crc16;
 };
