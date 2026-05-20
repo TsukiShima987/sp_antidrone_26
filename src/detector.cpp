@@ -1,0 +1,557 @@
+#include "include/detector.hpp"
+#include <yaml-cpp/yaml.h>
+#include <iostream>
+#include <opencv2/opencv.hpp>
+#include <Eigen/Geometry>
+
+using namespace std::chrono_literals;
+
+UAVDetector::UAVDetector() {
+    cv::namedWindow("binary", 0);
+
+    camera_matrix = (cv::Mat_<double>(3, 3) << 30164.346973727235, 0,                  1585.3978670158735, 
+                                               0,                  29990.338352363626, 1027.6312267976482, 
+                                               0,                  0,                  1                  );
+    dist_coeffs = (cv::Mat_<double>(5, 1) << 0.47187615502896024, 
+                                               23.566194187549524,
+                                               0.037885849822472041,
+                                               0.0028823047400091048,
+                                               0                     );
+
+    T_camera2gimbal = cv::Mat::eye(4, 4, CV_64F);
+    try {
+        YAML::Node config = YAML::LoadFile(transform_path);
+        if (config["T_camera2gimbal"] && config["T_camera2gimbal"].IsSequence()) {
+            auto rows = config["T_camera2gimbal"];
+            for (size_t i = 0; i < 4; ++i) {
+                auto row = rows[i];
+                for (size_t j = 0; j < 4; ++j) {
+                    T_camera2gimbal.at<double>(i, j) = row[j].as<double>();
+                }
+            }
+        } else {
+            std::cerr << "Missing or invalid T_camera2gimbal in yaml" << std::endl;
+        }
+    } catch (const YAML::Exception& e) {
+        std::cerr << "YAML parse error: " << e.what() << std::endl;
+    }
+
+    std::string yolo_config_file = "config/antidrone.yaml";
+    const auto yaml_yolo_config = YAML::LoadFile(yolo_config_file);
+
+    std::string drone_engine_file = yaml_yolo_config["drone_engine_file"].as<std::string>();
+    yolo_detection = yaml_yolo_config["yolo_option"].as<bool>();
+    uav_detection = yaml_yolo_config["uav_option"].as<bool>();
+    trtyolo::InferOption option;
+    option.enableSwapRB();
+    model_ = std::make_shared<trtyolo::DetectModel>(drone_engine_file, option);
+    std::cout << "DetectionAntiDrone::DetectionAntiDrone()" << std::endl;
+}
+
+std::vector<UAVTarget> UAVDetector::detectUAVs(const cv::Mat& frame, std::chrono::steady_clock::time_point timestamp)
+{
+    std::vector<UAVTarget> targets;
+    if (yolo_detection)
+    {
+        Bbox maxbbox = detect_once(frame);
+        estimatePoseYolo(maxbbox, timestamp);
+        // std::cout << "ID:" << maxbbox.id << ", Confidence:" << maxbbox.confidence << std::endl;
+        // std::cout << "yaw:" << maxbbox.yaw * 180.0f / CV_PI << ", pitch" << maxbbox.pitch * 180.0f / CV_PI << std::endl;
+    }
+
+    cv::Mat gray;
+    cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
+
+    std::vector<cv::Mat> binarys;
+    multiThresholdBinary(gray, binarys);
+
+    std::vector<std::pair<cv::RotatedRect, cv::RotatedRect>> light_pairs;
+    for (const auto& binary : binarys)
+    {
+        detectLightPairs(binary, light_pairs);
+    }
+
+    removeDuplicates(light_pairs);
+
+    std::vector<UAVTarget> valid_targets;
+    for (const auto& pair : light_pairs)
+    {
+        UAVTarget target = createUAVTarget(pair.first, pair.second, frame, timestamp);
+        if (validateTarget(target))
+        {
+            valid_targets.push_back(target);
+        }
+    }
+
+    if (!valid_targets.empty())
+    {
+        auto best_it = std::max_element(valid_targets.begin(), valid_targets.end(),
+            [](const UAVTarget& a, const UAVTarget& b) {
+                return a.confidence < b.confidence;
+            });
+        UAVTarget merged = *best_it;
+
+        merged.id = assignID(merged);
+
+        estimatePose(merged, timestamp);
+        // auto gs = gimbal.state();
+        std::cout << "ID:" << merged.id << ", Confidence:" << merged.confidence << std::endl;
+        std::cout << "yaw:" << merged.yaw * 180.0f / CV_PI << ", pitch" << merged.pitch * 180.0f / CV_PI << std::endl;
+        targets.push_back(merged);
+    }
+
+    return targets;
+}
+
+void UAVDetector::estimatePoseYolo(Bbox& bbox, std::chrono::steady_clock::time_point timestamp)
+{
+    float cx_pixel = (bbox.x_min + bbox.x_max) / 2.0f;
+    float cy_pixel = (bbox.y_min + bbox.y_max) / 2.0f;
+    cv::Point2f center_pixel(cx_pixel, cy_pixel);
+
+    float pixel_spacing = bbox.y_max - bbox.y_min;
+
+    float fx = camera_matrix.at<double>(0, 0);
+    float fy = camera_matrix.at<double>(1, 1);
+    float cx = camera_matrix.at<double>(0, 2);
+    float cy = camera_matrix.at<double>(1, 2);
+
+    double z = (fy * real_object_height) / pixel_spacing;
+    double x = (center_pixel.x - cx) * z / fx;
+    double y = (center_pixel.y - cy) * z / fy;
+
+    double distance = cv::norm(cv::Point3f(x, y, z));
+
+    cv::Point3d aim_point = computeLaserAimPoint(cv::Point3d(x, y, z));
+    x = -aim_point.x;
+    y = -aim_point.y;
+    z = aim_point.z;
+
+    // cv::Mat p_camera = (cv::Mat_<double>(4, 1) << x*1000, y*1000, z*1000, 1.0);
+
+    // cv::Mat p_gimbal_h = T_camera2gimbal * p_camera;
+    // cv::Point3d rel_gim(p_gimbal_h.at<double>(0), p_gimbal_h.at<double>(1), p_gimbal_h.at<double>(2));
+
+    // tools::Solver solver;
+    // auto q = gimbal.q(timestamp);
+    // solver.set_R_gimbal2world(q);
+    // Eigen::Vector3d p_gimbal(rel_gim.x, rel_gim.y, rel_gim.z);
+    // Eigen::Vector3d p_world = solver.R_gimbal2world() * p_gimbal;
+
+    // double world_x = p_world.x();
+    // double world_y = p_world.y();
+    // double world_z = p_world.z();
+
+    bbox.position = cv::Point3f(x, y, z);
+    bbox.distance = cv::norm(bbox.position);
+    // bbox.yaw = std::atan2(world_y, world_x);
+    // bbox.pitch = -std::atan2(world_z, sqrt(world_x * world_x + world_y * world_y));
+}
+
+void UAVDetector::estimatePose(UAVTarget& target, std::chrono::steady_clock::time_point timestamp)
+{
+    float fx = camera_matrix.at<double>(0, 0);
+    float fy = camera_matrix.at<double>(1, 1);
+    float cx = camera_matrix.at<double>(0, 2);
+    float cy = camera_matrix.at<double>(1, 2);
+    float pixel_spacing = cv::norm(target.top_lb.center - target.bottom_lb.center);
+
+    double z = (fy * real_spacing) / pixel_spacing;
+    double x = (target.center.x - cx) * z / fx;
+    double y = (target.center.y - cy) * z / fy;
+    double distance = cv::norm(cv::Point3f(x, y, z));
+
+    cv::Point3d aim_point = computeLaserAimPoint(cv::Point3d(x, y, z));
+    x = -aim_point.x;
+    y = -aim_point.y;
+    z = aim_point.z;
+
+    // cv::Mat p_camera = (cv::Mat_<double>(4, 1) << x*1000, y*1000, z*1000, 1.0);
+    // cv::Mat p_gimbal_h = T_camera2gimbal * p_camera;
+    // cv::Point3d rel_gim(p_gimbal_h.at<double>(0), p_gimbal_h.at<double>(1), p_gimbal_h.at<double>(2));
+
+    // tools::Solver solver;
+    // auto q = gimbal.q(timestamp);
+    // solver.set_R_gimbal2world(q);
+    // Eigen::Vector3d p_gimbal(rel_gim.x, rel_gim.y, rel_gim.z);
+    // Eigen::Vector3d p_world = solver.R_gimbal2world() * p_gimbal;
+
+    // x = p_world.x();
+    // y = p_world.y();
+    // z = p_world.z();
+
+    target.position = cv::Point3f(x, y, z);
+    target.distance = cv::norm(target.position);
+    // target.yaw = std::atan2(y, x);
+    // target.pitch = -std::atan2(z, sqrt(x * x + y * y));
+}
+
+Bbox UAVDetector::detect_once(const cv::Mat& frame)
+{
+    cv::Mat image = frame;
+
+    CarBbox car_bboxs;
+    car_bboxs.img_height = image.rows;
+    car_bboxs.img_width = image.cols;
+
+    cv::cvtColor(image, image, cv::COLOR_BGR2RGB);
+
+    trtyolo::Image input_image(image.data, image.cols, image.rows);
+    trtyolo::DetectRes result = model_->predict(input_image);
+
+    Bbox max_confidence_bbox;
+    max_confidence_bbox.class_confidence = -1.0f;
+
+    for (size_t j = 0; j < result.num; j++)
+    {
+        cv::Rect r = get_rect(image, result.boxes[j]);
+
+        Bbox bbox;
+        bbox.x_min = r.x;
+        bbox.y_min = r.y;
+        bbox.x_max = r.x + r.width;
+        bbox.y_max = r.y + r.height;
+        
+        bbox.class_confidence = result.scores[j];
+        bbox.class_id = result.classes[j];
+
+        car_bboxs.bboxs.push_back(bbox);
+
+        if (bbox.class_confidence > max_confidence_bbox.class_confidence) {
+            max_confidence_bbox = bbox;
+        }
+
+        r &= cv::Rect(0, 0, image.cols, image.rows);
+        cv::rectangle(image, r, cv::Scalar(0x27, 0xC1, 0x36), 2);
+        cv::Mat region = image(r);
+    }
+
+    cv::cvtColor(image, image, cv::COLOR_RGB2BGR);
+    draw_car_bbox(car_bboxs, image);
+
+    cv::resize(image, image, cv::Size(1500, 1000));
+    cv::imshow("yolo_detection_result", image);
+    cv::waitKey(1);
+
+    return max_confidence_bbox;   
+}
+
+cv::Point3d UAVDetector::computeLaserAimPoint(const cv::Point3d& target_cam)
+{
+    using namespace Eigen;
+
+    const Vector3d S0(36.71872987, -7.4622397, 0.0);
+    Vector3d d0(0.00409691, 0.00021795, 0.99998631);
+    d0.normalize();
+
+    Vector3d p_cam(target_cam.x * 1000.0,
+                target_cam.y * 1000.0,
+                target_cam.z * 1000.0);
+    double dist_mm = p_cam.norm();
+    if (dist_mm < 1e-6) return target_cam;
+
+    const double tol = 1e-9, step = 1e-7;
+    const int maxIter = 50;
+
+    auto buildR = [](double a, double t) -> Matrix3d {
+        return AngleAxisd(t, Vector3d(cos(a), sin(a), 0)).toRotationMatrix();
+    };
+
+    auto residual = [&](double a, double t) -> Vector2d {
+        Matrix3d R = buildR(a, t);
+        Vector3d diff = R * p_cam - S0;
+        return diff.cross(d0).head<2>();
+    };
+
+    auto normalize = [](double &a, double &t) {
+        if (t < 0) { t = -t; a += M_PI; }
+        a = fmod(a, 2 * M_PI);
+        if (a < 0) a += 2 * M_PI;
+    };
+
+    auto valid = [&](double a, double t) -> bool {
+        Matrix3d R = buildR(a, t);
+        Vector3d diff = R * p_cam - S0;
+        return diff.dot(d0) > 0 && diff.cross(d0).norm() < 1e-8;
+    };
+
+    std::vector<double> seedsA = {0., M_PI/2, M_PI, 3*M_PI/2};
+    std::vector<double> seedsT = {M_PI/4, M_PI/2, 3*M_PI/4};
+    double bestA = 0, bestT = 0, bestRes = 1e20;
+
+    for (double a0 : seedsA) {
+        for (double t0 : seedsT) {
+            double a = a0, t = t0;
+            normalize(a, t);
+            for (int i = 0; i < maxIter; ++i) {
+                Vector2d f = residual(a, t);
+                double r = f.norm();
+                if (r < tol) {
+                    if (valid(a, t)) { bestA = a; bestT = t; bestRes = r; goto done; }
+                    else break;
+                }
+                Matrix2d J;
+                for (int j = 0; j < 2; ++j) {
+                    double da = (j == 0 ? step : 0), dt = (j == 1 ? step : 0);
+                    J.col(j) = (residual(a + da, t + dt) - f) / step;
+                }
+                Vector2d delta = J.fullPivLu().solve(-f);
+                double anew = a + delta(0), tnew = t + delta(1);
+                normalize(anew, tnew);
+                if (std::abs(delta(0)) < 1e-12 && std::abs(delta(1)) < 1e-12) {
+                    if (valid(anew, tnew)) {
+                        bestA = anew; bestT = tnew;
+                        bestRes = residual(anew, tnew).norm();
+                        goto done;
+                    }
+                    break;
+                }
+                a = anew; t = tnew;
+            }
+        }
+    }
+done:
+    if (bestRes < 1e-7 && valid(bestA, bestT)) {
+        Matrix3d R = buildR(bestA, bestT);
+        Vector3d aim_dir = R * Vector3d(0, 0, 1);
+        Vector3d aim_pt_mm = aim_dir * dist_mm;
+        return cv::Point3d(aim_pt_mm.x() / 1000.0,
+                        aim_pt_mm.y() / 1000.0,
+                        aim_pt_mm.z() / 1000.0);
+    }
+    return target_cam;
+}
+
+cv::Rect UAVDetector::get_rect(cv::Mat &img, const trtyolo::Box& bbox)
+{
+    float left = bbox.left;
+    float top = bbox.top;
+    float right = bbox.right;
+    float bottom = bbox.bottom;
+    cv::Rect r = cv::Rect(cv::Point(left, top), cv::Point(right, bottom));
+    return r;
+}
+
+void UAVDetector::draw_car_bbox(CarBbox car_bboxs, cv::Mat& frame)
+{
+    for (auto bbox : car_bboxs.bboxs)
+    {
+        cv::Scalar color = (bbox.class_id < 6) ? cv::Scalar(255, 128, 0) : cv::Scalar(50, 50, 255);
+        if (bbox.x_min > 0 || bbox.y_min > 20 || bbox.x_max < frame.cols - 50 || bbox.y_max < frame.rows)
+        {
+            cv::rectangle(frame, cv::Point(bbox.x_min, bbox.y_min), cv::Point(bbox.x_max, bbox.y_max), color, 10);
+            cv::putText(frame, std::to_string((bbox.class_id) % 6 + 1), cv::Point(bbox.x_min + 40, bbox.y_min - 10), cv::FONT_HERSHEY_PLAIN, 6, color, 6);
+            cv::circle(frame, cv::Point((bbox.x_min+bbox.x_max)/2, (bbox.y_max + bbox.y_min)/2), 2, color, 10);
+        }
+    }
+}
+
+void UAVDetector::multiThresholdBinary(const cv::Mat& src, std::vector<cv::Mat>& binarys)
+{
+    std::vector<int> thresholds = {50};
+
+    for (int thresh : thresholds)
+    {
+        cv::Mat binary;
+        cv::threshold(src, binary, thresh, 255, cv::THRESH_BINARY);
+
+        cv::Mat kernal = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
+        cv::morphologyEx(binary, binary, cv::MORPH_OPEN, kernal);
+
+        cv::resizeWindow("binary", cv::Size(1920, 1280));
+        cv::imshow("binary", binary);
+
+        binarys.push_back(binary);
+    }
+}
+
+void UAVDetector::detectLightPairs(const cv::Mat& binary, std::vector<std::pair<cv::RotatedRect, cv::RotatedRect>>& pairs)
+{
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(binary, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+
+    std::vector<cv::RotatedRect> lights;
+
+    for (const auto& contour : contours)
+    {
+        cv::RotatedRect rect = cv::minAreaRect(contour);
+
+        float length = std::max(rect.size.width, rect.size.height);
+        float width = std::min(rect.size.width, rect.size.height);
+        float ratio = length / width;
+
+        if (length >= params.min_length && length <= params.max_length && ratio >= params.min_ratio && ratio <= params.max_ratio)
+        {
+            lights.push_back(rect);
+        }
+    }
+
+    for (size_t i = 0; i < lights.size(); ++i)
+    {
+        for (size_t j = i + 1; j < lights.size(); ++j)
+        {
+            if (isValidPair(lights[i], lights[j]))
+            {
+                pairs.push_back({lights[i], lights[j]});
+            }
+        }
+    }
+}
+
+bool UAVDetector::isValidPair(const cv::RotatedRect& r1, const cv::RotatedRect& r2)
+{
+    float angle1 = r1.angle;
+    float angle2 = r2.angle;
+    float angle_diff = std::abs(angle1 - angle2);
+    angle_diff = std::min(angle_diff, 180.0f - angle_diff);
+
+    if (angle_diff > params.max_angle_diff) return false;
+
+    float len1 = std::max(r1.size.width, r1.size.height);
+    float len2 = std::max(r2.size.width, r2.size.height);
+
+    float spacing = cv::norm(r1.center - r2.center);
+    float avg_length = (len1 + len2) / 2;
+
+    if (std::abs(r1.center.x - r2.center.x) / avg_length > 0.5) return false;
+
+    float spacing_ratio = spacing / avg_length;
+
+    if (spacing_ratio < params.min_spacing_ratio || spacing_ratio > params.max_spacing_ratio) return false;
+
+    return true;
+}
+
+void UAVDetector::removeDuplicates(std::vector<std::pair<cv::RotatedRect, cv::RotatedRect>>& pairs)
+{
+    const float DIST_THRESH = 20;
+
+    for (auto it = pairs.begin(); it != pairs.end(); )
+    {
+        bool duplicate = false;
+        cv::Point2f center1 = (it->first.center + it->second.center) / 2;
+
+        for (auto jt = pairs.begin(); jt != it; ++jt)
+        {
+            cv::Point2f center2 = (jt->first.center + jt->second.center) / 2;
+            if (cv::norm(center1 - center2) < DIST_THRESH)
+            {
+                duplicate = true;
+                break;
+            }
+        }
+
+        if (duplicate) it = pairs.erase(it);
+        else ++it;
+    }
+}
+
+UAVTarget UAVDetector::createUAVTarget(const cv::RotatedRect& top, const cv::RotatedRect& bottom, const cv::Mat& frame, std::chrono::steady_clock::time_point timestamp)
+{
+    UAVTarget target;
+
+    if (top.center.y < bottom.center.y)
+    {
+        target.top_lb = top;
+        target.bottom_lb = bottom;
+    }
+    else
+    {
+        target.bottom_lb = top;
+        target.top_lb = bottom;
+    }
+
+    target.center = (target.top_lb.center + target.bottom_lb.center) / 2;
+
+    float top_len = std::max(target.top_lb.size.width, target.top_lb.size.height);
+    float bottom_len = std::max(target.bottom_lb.size.width, target.bottom_lb.size.height);
+    target.lb_length = (top_len + bottom_len) / 2;
+    target.lb_spacing = target.bottom_lb.center.y - target.top_lb.center.y;
+
+    target.bounding_box = calculateBoundingBox(target.top_lb, target.bottom_lb);
+    target.roi = calculateROIVertices(target.top_lb, target.bottom_lb);
+
+    target.confidence = calculateConfidence(target);
+
+    return target;
+}
+
+cv::Rect2f UAVDetector::calculateBoundingBox(const cv::RotatedRect& top, const cv::RotatedRect& bottom)
+{
+    std::vector<cv::Point2f> points;
+
+    cv::Point2f topPts[4], bottomPts[4];
+    top.points(topPts);
+    bottom.points(bottomPts);
+    for (int i = 0; i < 4; ++i)
+    {
+        points.push_back(topPts[i]);
+        points.push_back(bottomPts[i]);
+    }
+
+    float minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
+    for (const auto& p : points)
+    {
+        minX = std::min(minX, p.x);
+        minY = std::min(minY, p.y);
+        maxX = std::max(maxX, p.x);
+        maxY = std::max(maxY, p.y);
+    }
+
+    return cv::Rect2f(minX, minY, maxX - minX, maxY - minY); 
+}
+
+std::vector<cv::Point2f> UAVDetector::calculateROIVertices(const cv::RotatedRect& top, const cv::RotatedRect& bottom)
+{
+    std::vector<cv::Point2f> vertices(4);
+
+    cv::Point2f topPts[4], bottomPts[4];
+    top.points(topPts);
+    bottom.points(bottomPts);
+
+    float leftX = std::min({topPts[0].x, topPts[1].x, topPts[2].x, topPts[3].x,
+                            bottomPts[0].x, bottomPts[1].x, bottomPts[2].x, bottomPts[3].x});
+    float rightX = std::max({topPts[0].x, topPts[1].x, topPts[2].x, topPts[3].x,
+                            bottomPts[0].x, bottomPts[1].x, bottomPts[2].x, bottomPts[3].x});
+
+    vertices[0] = cv::Point2f(leftX, topPts[0].y);
+    vertices[1] = cv::Point2f(rightX, topPts[0].y);
+    vertices[2] = cv::Point2f(rightX, bottomPts[3].y);
+    vertices[3] = cv::Point2f(leftX, bottomPts[3].y);
+
+    return vertices;
+}
+
+float UAVDetector::calculateConfidence(const UAVTarget& target)
+{
+    float confidence = 0;
+
+    float angle_diff = std::abs(target.top_lb.angle - target.bottom_lb.angle);
+    angle_diff = std::min(angle_diff, 180.0f - angle_diff);
+    confidence += (1.0f - angle_diff / params.max_angle_diff) * 0.2f;
+
+    float top_len = std::max(target.top_lb.size.width, target.top_lb.size.height);
+    float bottom_len = std::max(target.bottom_lb.size.width, target.bottom_lb.size.height);
+    float len_ratio = std::min(top_len, bottom_len) / std::max(top_len, bottom_len);
+    confidence += len_ratio * 0.2f;
+
+    float spacing_ratio = target.lb_spacing / target.lb_length;
+    if (spacing_ratio >= params.min_spacing_ratio && spacing_ratio <= params.max_spacing_ratio)
+    {
+        float ideal_ratio = (params.min_spacing_ratio + params.max_spacing_ratio) / 2;
+        float ratio_diff = std::abs(spacing_ratio - ideal_ratio) / ideal_ratio;
+        confidence += (1.0f - ratio_diff) * 0.6f;
+    }
+
+    return confidence;
+}
+
+bool UAVDetector::validateTarget(const UAVTarget& target)
+{
+    return target.confidence >= params.min_confidence;
+}
+
+int UAVDetector::assignID(const UAVTarget& target)
+{
+    return next_id++;
+}

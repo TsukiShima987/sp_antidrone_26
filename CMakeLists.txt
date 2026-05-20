@@ -103,9 +103,9 @@ add_subdirectory(io)
 # ------------------------------------------------------------------------------
 # Executables
 # ------------------------------------------------------------------------------
-add_executable(visualize visualize.cpp)
+add_executable(antidrone src/visualizer.cpp src/detector.cpp src/main.cpp)
 
-target_link_libraries(visualize
+target_link_libraries(antidrone
     ${OpenCV_LIBS}
     yaml-cpp
     tools
@@ -120,8 +120,8 @@ target_link_libraries(visualize
     spdlog::spdlog           # explicit
 )
 
-set_compile_options(visualize)
-set_target_properties(visualize PROPERTIES
+set_compile_options(antidrone)
+set_target_properties(antidrone PROPERTIES
     CUDA_ARCHITECTURES "61;70;75;86"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
 )

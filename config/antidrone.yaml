@@ -3,5 +3,24 @@ drone_engine_file: "./models/2/antidronev2.engine"
 yolo_option: false
 uav_option: true
 
+T_camera2gimbal:
+  - [0.0, 0.0, 1.0, 0.08915]
+  - [-1.0, 0.0, 0.0, 0.0150]
+  - [0.0, -1.0, 0.0, 0.0215]
+  - [0.0, 0.0, 0.0, 1.0]
+
+com_port: "/dev/gimbal"
 
 
+##########camera参数##########
+camera_name: "hikrobot_sn"
+exposure_ms: 5
+gain: 24
+vid_pid: "2bdf:0001"
+serial_number: "DA8290713"
+
+# 重投影误差: 0.1792px
+camera_matrix: [32504.00911263084, 0, 1532.0162245567647, 0, 32616.686243747587, 1046.6393031900541, 0, 0, 1]
+distort_coeffs: [0.52339467406775086, 43.115297379766723, 0.00078266127498807922, -0.010255957344478761, 0.14553043546298375]
+
+rotation_angle: 0
