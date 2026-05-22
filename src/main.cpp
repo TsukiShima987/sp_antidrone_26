@@ -89,6 +89,9 @@ int main(int argc, char** argv) {
 
             else if (yolo_detection) {
                 std::tie(maxbbox, targets, img) = detector.detectYolos(frame, timestamp);
+                if (targets[0].confidence == -1.0f) {
+                    targets.clear(); // 如果没有检测到有效目标，清空列表
+                }
                 cv::resizeWindow("YOLO Detector - Camera", cv::Size(1920, 1280));
                 cv::imshow("YOLO Detector - Camera", img);
 
