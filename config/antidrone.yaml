@@ -24,3 +24,12 @@ camera_matrix: [32504.00911263084, 0, 1532.0162245567647, 0, 32616.686243747587,
 distort_coeffs: [0.52339467406775086, 43.115297379766723, 0.00078266127498807922, -0.010255957344478761, 0.14553043546298375]
 
 rotation_angle: 0
+
+##########扫描参数##########
+scan_center_yaw_deg: 5.0
+scan_center_pitch_deg: 0.0
+scan_yaw_step_deg: 0.05
+scan_pitch_step_deg: 0.02
+scan_cols: 20
+scan_rows: 10
+scan_timeout_ms: 1000
