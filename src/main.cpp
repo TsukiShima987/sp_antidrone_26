@@ -2,14 +2,24 @@
 #include "visualizer.hpp"
 #include "scanner.hpp"
 #include <yaml-cpp/yaml.h>
-
+#include "tools/recorder.hpp"
 
 int main(int argc, char** argv) {
     UAVDetectorVisualizer visualizer;
     cv::Mat frame;
+
     std::chrono::steady_clock::time_point timestamp = std::chrono::steady_clock::now();
     cv::namedWindow("UAV Detector - Camera", 0);
+    
+    double fps_ = 30.0;            
 
+    std::string config_path = "config/antidrone.yaml";
+    auto config = YAML::LoadFile(config_path);
+
+    bool yolo_detection = config["yolo_option"].as<bool>();
+    bool uav_detection = config["uav_option"].as<bool>();
+    bool is_recording_ = config["record_video"].as<bool>();
+    
     // 解析命令行参数
     if (argc < 2) {
         std::cout << "Usage:" << std::endl;
@@ -25,8 +35,7 @@ int main(int argc, char** argv) {
     std::string mode = argv[1];
     
     if (mode == "camera") {
-        std::string config_path = "config/antidrone.yaml";
-        // auto config = YAML::LoadFile(config_path);
+  
         std::unique_ptr<io::Camera> camera;
         // auto needed_file_ = std::make_unique<std::string>();
         // *needed_file_ = config["camera_config_file"].as<std::string>();
@@ -36,6 +45,15 @@ int main(int argc, char** argv) {
         UAVDetector detector;
         aimer.set_gimbal(&gimbal);
         Scanner scanner(config_path);
+
+        tools::Recorder recorder(fps_);
+
+        // video_writer_.open(output_video_path_, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), fps_, output_size_); // h264
+        // if (!video_writer_.isOpened()) {
+        //     std::cerr << "Error: Could not open video writer" << std::endl;
+        //     return -1;
+        // }
+
         while (true)
         {
             cv::Mat frame;
@@ -45,8 +63,40 @@ int main(int argc, char** argv) {
                 std::cerr << "Error: Empty frame from camera" << std::endl;
                 break;
             }
-            std::vector<UAVTarget> targets = detector.detectUAVs(frame, timestamp);
-            visualizer.visualizeFrame(frame, targets);
+
+            auto q = gimbal.q(timestamp);
+            if (is_recording_) {
+                        // video_writer_.write(frame);
+                    recorder.record(frame, q, timestamp);
+            }
+
+            // visualizer.visualizeFrame(frame, timestamp);
+                // 检测无人机
+            std::vector<UAVTarget> targets;
+            Bbox maxbbox;
+            cv::Mat img;
+
+            if (uav_detection){
+                targets = detector.detectUAVs(frame, timestamp);
+                visualizer.visualizeFrame(frame, targets);
+                cv::resizeWindow("UAV Detector - Camera", cv::Size(1920, 1280));
+                cv::imshow("UAV Detector - Camera", frame);
+
+                char key = cv::waitKey(1);
+                if (key == 'q') break;
+
+            }
+
+            else if (yolo_detection) {
+                std::tie(maxbbox, targets, img) = detector.detectYolos(frame, timestamp);
+                cv::resizeWindow("YOLO Detector - Camera", cv::Size(1920, 1280));
+                cv::imshow("YOLO Detector - Camera", img);
+
+                char key = cv::waitKey(1);
+                if (key == 'q') break;
+
+            }
+
 
             auto q_s = gimbal.state();
             std::cout << "Gimbal State - Yaw: " << q_s.yaw * 180 / M_PI
@@ -66,16 +116,11 @@ int main(int argc, char** argv) {
                 }
             }
 
-            cv::resizeWindow("UAV Detector - Camera", cv::Size(1920, 1280));
-            cv::imshow("UAV Detector - Camera", frame);
 
-            char key = cv::waitKey(1);
-            if (key == 'q') break;
-            if (key == 's') {
-                cv::imwrite("detection_capture.jpg", frame);
-                std::cout << "Frame saved as detection_capture.jpg" << std::endl;
-            }
+
         }
+        // video_writer_.release();
+        is_recording_ = false;
     }
     else if (mode == "video") {
         // 视频文件模式
