@@ -1,7 +1,7 @@
-drone_engine_file: "./models/best.engine"
+drone_engine_file: "./models/2/antidronev2.engine"
 
-yolo_option: false
-uav_option: true
+yolo_option: true
+uav_option: false
 
 T_camera2gimbal:
   - [0.0, 0.0, 1.0, 0.08915]
@@ -14,7 +14,7 @@ com_port: "/dev/gimbal"
 
 ##########camera参数##########
 camera_name: "hikrobot_sn"
-exposure_ms: 5
+exposure_ms: 2
 gain: 24
 vid_pid: "2bdf:0001"
 serial_number: "DA8290713"
@@ -28,7 +28,7 @@ rotation_angle: 0
 record_video: true
 
 ##########扫描参数##########
-scan_center_yaw_deg: 5.0
+scan_center_yaw_deg: 2.0
 scan_center_pitch_deg: 0.0
 scan_yaw_step_deg: 0.05
 scan_pitch_step_deg: 0.02
