@@ -17,10 +17,11 @@ UAVDetector::UAVDetector() {
                                                0.037885849822472041,
                                                0.0028823047400091048,
                                                0                     );
+    std::string config_path = "config/antidrone.yaml";
+    const auto config = YAML::LoadFile(config_path);
 
     T_camera2gimbal = cv::Mat::eye(4, 4, CV_64F);
     try {
-        YAML::Node config = YAML::LoadFile(transform_path);
         if (config["T_camera2gimbal"] && config["T_camera2gimbal"].IsSequence()) {
             auto rows = config["T_camera2gimbal"];
             for (size_t i = 0; i < 4; ++i) {
@@ -36,12 +37,9 @@ UAVDetector::UAVDetector() {
         std::cerr << "YAML parse error: " << e.what() << std::endl;
     }
 
-    std::string yolo_config_file = "config/antidrone.yaml";
-    const auto yaml_yolo_config = YAML::LoadFile(yolo_config_file);
 
-    std::string drone_engine_file = yaml_yolo_config["drone_engine_file"].as<std::string>();
-    yolo_detection = yaml_yolo_config["yolo_option"].as<bool>();
-    uav_detection = yaml_yolo_config["uav_option"].as<bool>();
+    std::string drone_engine_file;
+    drone_engine_file = config["drone_engine_file"].as<std::string>();
     trtyolo::InferOption option;
     option.enableSwapRB();
     model_ = std::make_shared<trtyolo::DetectModel>(drone_engine_file, option);
@@ -51,14 +49,6 @@ UAVDetector::UAVDetector() {
 std::vector<UAVTarget> UAVDetector::detectUAVs(const cv::Mat& frame, std::chrono::steady_clock::time_point timestamp)
 {
     std::vector<UAVTarget> targets;
-    if (yolo_detection)
-    {
-        Bbox maxbbox = detect_once(frame);
-        estimatePoseYolo(maxbbox, timestamp);
-        // std::cout << "ID:" << maxbbox.id << ", Confidence:" << maxbbox.confidence << std::endl;
-        // std::cout << "yaw:" << maxbbox.yaw * 180.0f / CV_PI << ", pitch" << maxbbox.pitch * 180.0f / CV_PI << std::endl;
-    }
-
     cv::Mat gray;
     cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
 
@@ -101,6 +91,32 @@ std::vector<UAVTarget> UAVDetector::detectUAVs(const cv::Mat& frame, std::chrono
     }
 
     return targets;
+}
+std::tuple<Bbox, std::vector<UAVTarget>, cv::Mat> 
+UAVDetector::detectYolos(const cv::Mat& frame, std::chrono::steady_clock::time_point timestamp)
+{
+    std::vector<UAVTarget> targets;
+    Bbox maxbbox;
+    cv::Mat image;
+    image = frame.clone();
+
+    std::tie(maxbbox, image) = detect_once(image);
+    estimatePoseYolo(maxbbox, timestamp);
+
+    UAVTarget target;
+    target.center = cv::Point2f((maxbbox.x_min + maxbbox.x_max) / 2.0f, (maxbbox.y_min + maxbbox.y_max) / 2.0f);
+    target.confidence = maxbbox.class_confidence;
+    target.position = maxbbox.position;
+    target.distance = maxbbox.distance;
+    target.yaw = maxbbox.yaw;
+    target.pitch = maxbbox.pitch;
+    target.id = assignID(target);
+    target.bounding_box = cv::Rect2f(cv::Point2f(maxbbox.x_min, maxbbox.y_min), cv::Point2f(maxbbox.x_max, maxbbox.y_max));
+
+    targets. push_back(target);
+    // std::cout << "ID:" << maxbbox.id << ", Confidence:" << maxbbox.confidence << std::endl;
+    // std::cout << "yaw:" << maxbbox.yaw * 180.0f / CV_PI << ", pitch" << maxbbox.pitch * 180.0f / CV_PI << std::endl;
+    return std::make_tuple(maxbbox, targets, image);
 }
 
 void UAVDetector::estimatePoseYolo(Bbox& bbox, std::chrono::steady_clock::time_point timestamp)
@@ -186,9 +202,8 @@ void UAVDetector::estimatePose(UAVTarget& target, std::chrono::steady_clock::tim
     // target.pitch = -std::atan2(z, sqrt(x * x + y * y));
 }
 
-Bbox UAVDetector::detect_once(const cv::Mat& frame)
+std::pair<Bbox, cv::Mat> UAVDetector::detect_once(cv::Mat image)
 {
-    cv::Mat image = frame;
 
     CarBbox car_bboxs;
     car_bboxs.img_height = image.rows;
@@ -229,11 +244,11 @@ Bbox UAVDetector::detect_once(const cv::Mat& frame)
     cv::cvtColor(image, image, cv::COLOR_RGB2BGR);
     draw_car_bbox(car_bboxs, image);
 
-    cv::resize(image, image, cv::Size(1500, 1000));
-    cv::imshow("yolo_detection_result", image);
-    cv::waitKey(1);
+    cv::resize(image, image, cv::Size(1920, 1280));
+    // cv::imshow("yolo_detection_result", image);
+    // cv::waitKey(1);
 
-    return max_confidence_bbox;   
+    return std::make_pair(max_confidence_bbox, image);   
 }
 
 cv::Point3d UAVDetector::computeLaserAimPoint(const cv::Point3d& target_cam)
