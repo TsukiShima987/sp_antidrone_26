@@ -31,7 +31,7 @@ include_directories(${CUDA_ROOT}/include)
 link_directories(${CUDA_ROOT}/lib64)
 find_library(CUDA_LIBRARY cudart HINTS ${CUDA_ROOT}/lib64)
 
-set(TENSORRT_PATH "/home/squirtle/TensorRT-8.6.1.6" CACHE PATH "Path to TensorRT")
+set(TENSORRT_PATH "/home/radar/TensorRT-8.6.1.6" CACHE PATH "Path to TensorRT")
 include_directories(${TENSORRT_PATH}/include)
 link_directories(${TENSORRT_PATH}/lib)
 
@@ -39,7 +39,7 @@ find_library(NVINFER_LIBRARY nvinfer PATHS ${TENSORRT_PATH}/lib REQUIRED)
 find_library(NVINFER_PLUGIN_LIBRARY nvinfer_plugin PATHS ${TENSORRT_PATH}/lib REQUIRED)
 find_library(NVONNX_PARSER_LIB nvonnxparser PATHS ${TENSORRT_PATH}/lib REQUIRED)
 
-set(TRTYOLO_DIR "/home/squirtle/TensorRT-YOLO" CACHE PATH "Path to TRTYOLO")
+set(TRTYOLO_DIR "/home/radar/TensorRT-YOLO" CACHE PATH "Path to TRTYOLO")
 if(NOT EXISTS ${TRTYOLO_DIR})
     message(FATAL_ERROR "TRTYOLO directory not found: ${TRTYOLO_DIR}")
 endif()

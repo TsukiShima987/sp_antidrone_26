@@ -74,8 +74,7 @@ private:
     const float real_spacing = 0.042f;
     const float real_object_height = 0.067f;
     std::string config_path = "io/configs/camera.yaml";
-    std::string transform_path = "config/camera2gimbal.yaml";
-    // io::Gimbal gimbal;
+
     std::shared_ptr<trtyolo::DetectModel> model_;
 
     cv::Mat T_camera2gimbal;
@@ -85,11 +84,11 @@ public:
     UAVDetector();
 
     std::vector<UAVTarget> detectUAVs(const cv::Mat& frame, std::chrono::steady_clock::time_point timestamp);
-
+    std::tuple<Bbox, std::vector<UAVTarget>, cv::Mat> detectYolos(const cv::Mat& frame, std::chrono::steady_clock::time_point timestamp);
     void estimatePoseYolo(Bbox& bbox, std::chrono::steady_clock::time_point timestamp);
     void estimatePose(UAVTarget& target, std::chrono::steady_clock::time_point timestamp);
 
-    Bbox detect_once(const cv::Mat& frame);
+    std::pair<Bbox, cv::Mat> detect_once(cv::Mat frame);
 
 private:
     cv::Point3d computeLaserAimPoint(const cv::Point3d& target_cam);
