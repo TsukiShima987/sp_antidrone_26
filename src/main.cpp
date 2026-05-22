@@ -1,5 +1,6 @@
 #include "aimer.hpp"
 #include "visualizer.hpp"
+#include "scanner.hpp"
 #include <yaml-cpp/yaml.h>
 
 
@@ -34,6 +35,7 @@ int main(int argc, char** argv) {
         io::Gimbal gimbal(config_path);
         UAVDetector detector;
         aimer.set_gimbal(&gimbal);
+        Scanner scanner(config_path);
         while (true)
         {
             cv::Mat frame;
@@ -43,17 +45,25 @@ int main(int argc, char** argv) {
                 std::cerr << "Error: Empty frame from camera" << std::endl;
                 break;
             }
-            // visualizer.visualizeFrame(frame, timestamp);
-                // 检测无人机
             std::vector<UAVTarget> targets = detector.detectUAVs(frame, timestamp);
             visualizer.visualizeFrame(frame, targets);
 
             auto q_s = gimbal.state();
-            std::cout << "Gimbal State - Yaw: " << q_s.yaw * 180 / M_PI  << ", Pitch: " << q_s.pitch * 180 / M_PI  << std::endl;
+            std::cout << "Gimbal State - Yaw: " << q_s.yaw * 180 / M_PI
+                      << ", Pitch: " << q_s.pitch * 180 / M_PI << std::endl;
             if (!targets.empty()) {
+                scanner.reset(timestamp);
                 auto [yaw, pitch] = aimer.aim(targets[0], timestamp);
-                std::cout << "Aiming at target - Yaw: " << yaw * 180 / M_PI << " degrees, Pitch: " << pitch * 180 / M_PI << " degrees" << std::endl;
+                std::cout << "Aiming at target - Yaw: " << yaw * 180 / M_PI
+                          << " degrees, Pitch: " << pitch * 180 / M_PI << " degrees" << std::endl;
                 gimbal.send(true, false, yaw, 0, 0, pitch, 0, 0);
+            } else {
+                auto scan_pos = scanner.update(timestamp);
+                if (scan_pos) {
+                    std::cout << "Scanning - Yaw: " << scan_pos->first * 180 / M_PI
+                              << "°, Pitch: " << scan_pos->second * 180 / M_PI << "°" << std::endl;
+                    gimbal.send(true, false, scan_pos->first, 0, 0, scan_pos->second, 0, 0);
+                }
             }
 
             cv::resizeWindow("UAV Detector - Camera", cv::Size(1920, 1280));
@@ -64,7 +74,7 @@ int main(int argc, char** argv) {
             if (key == 's') {
                 cv::imwrite("detection_capture.jpg", frame);
                 std::cout << "Frame saved as detection_capture.jpg" << std::endl;
-            }        
+            }
         }
     }
     else if (mode == "video") {
