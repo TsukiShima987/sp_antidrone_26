@@ -43,6 +43,7 @@ public:
   size_t window_size = 50;
   double last_nis;
 
+  Eigen::VectorXd getState() const { return x; }
 private:
   Eigen::MatrixXd I;
   std::function<Eigen::VectorXd(const Eigen::VectorXd &, const Eigen::VectorXd &)> x_add;

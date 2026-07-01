@@ -227,8 +227,8 @@ cv::Point3d UAVDetector::computeLaserAimPoint(const cv::Point3d& target_cam)
 {
     using namespace Eigen;
 
-    const Vector3d S0(36.71872987, -7.4622397, 0.0);
-    Vector3d d0(0.00409691, 0.00021795, 0.99998631);
+    const Vector3d S0(36.71872987, -7.4622397, 1.0);
+    Vector3d d0(0.00409691, 0.00001795, 0.99998631);
     d0.normalize();
 
     Vector3d p_cam(target_cam.x * 1000.0,

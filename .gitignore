@@ -1,5 +1,7 @@
 .vscode/
 build/
+install/
+log/
 logs/
 **.onnx
 **.engine
