@@ -103,7 +103,14 @@ add_subdirectory(io)
 # ------------------------------------------------------------------------------
 # Executables
 # ------------------------------------------------------------------------------
-add_executable(antidrone src/visualizer.cpp src/detector.cpp src/main.cpp)
+add_executable(antidrone
+    src/main.cpp
+    src/tracker.cpp
+    src/detectors/base_detector.cpp
+    src/detectors/light_bar_detector.cpp
+    src/detectors/yolo_detector.cpp
+    src/detectors/detector.cpp
+)
 
 target_link_libraries(antidrone
     ${OpenCV_LIBS}

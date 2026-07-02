@@ -6,7 +6,6 @@
 #include <string>
 #include <memory>
 #include <chrono>
-// #include "io/gimbal/gimbal.hpp"
 #include "../tools/solver.hpp"
 #include "../TensorRT-YOLO/include/trtyolo.hpp"
 #include <Eigen/Dense>
@@ -54,9 +53,48 @@ struct CarBbox {
     std::vector<Bbox> bboxs;
 };
 
-class UAVDetector{
+// ============================================================================
+// Abstract base class for UAV detectors
+// ============================================================================
+class BaseDetector {
+public:
+    BaseDetector();
+    virtual ~BaseDetector() = default;
+
+    virtual std::vector<UAVTarget> detect(const cv::Mat& frame,
+        std::chrono::steady_clock::time_point timestamp) = 0;
+    virtual cv::Mat visualize(const cv::Mat& frame,
+        const std::vector<UAVTarget>& targets) = 0;
+
+protected:
+    cv::Mat camera_matrix;
+    cv::Mat dist_coeffs;
+    const float real_spacing = 0.042f;
+    const float real_object_height = 0.067f;
+    std::string config_path = "io/configs/camera.yaml";
+    cv::Mat T_camera2gimbal;
+    int next_id = 0;
+
+    void estimatePose(UAVTarget& target, float pixel_spacing, float real_size,
+        const cv::Point2f& center);
+    cv::Point3d computeLaserAimPoint(const cv::Point3d& target_cam);
+    int assignID(const UAVTarget& target);
+};
+
+// ============================================================================
+// Traditional light-bar based detector
+// ============================================================================
+class LightBarDetector : public BaseDetector {
+public:
+    LightBarDetector();
+
+    std::vector<UAVTarget> detect(const cv::Mat& frame,
+        std::chrono::steady_clock::time_point timestamp) override;
+    cv::Mat visualize(const cv::Mat& frame,
+        const std::vector<UAVTarget>& targets) override;
+
 private:
-    struct DetectionParams{
+    struct DetectionParams {
         float min_length = 5;
         float max_length = 500;
         float min_ratio = 1.0;
@@ -67,43 +105,53 @@ private:
         float min_confidence = 0.5;
     } params;
 
-    int next_id = 0;
-
-    cv::Mat camera_matrix;
-    cv::Mat dist_coeffs;
-    const float real_spacing = 0.042f;
-    const float real_object_height = 0.067f;
-    std::string config_path = "io/configs/camera.yaml";
-
-    std::shared_ptr<trtyolo::DetectModel> model_;
-
-    cv::Mat T_camera2gimbal;
-    bool yolo_detection = false;
-    bool uav_detection = false;
-public:
-    UAVDetector();
-
-    std::vector<UAVTarget> detectUAVs(const cv::Mat& frame, std::chrono::steady_clock::time_point timestamp);
-    std::tuple<Bbox, std::vector<UAVTarget>, cv::Mat> detectYolos(const cv::Mat& frame, std::chrono::steady_clock::time_point timestamp);
-    void estimatePoseYolo(Bbox& bbox, std::chrono::steady_clock::time_point timestamp);
-    void estimatePose(UAVTarget& target, std::chrono::steady_clock::time_point timestamp);
-
-    std::pair<Bbox, cv::Mat> detect_once(cv::Mat frame);
-
-private:
-    cv::Point3d computeLaserAimPoint(const cv::Point3d& target_cam);
-    cv::Rect get_rect(cv::Mat &img, const trtyolo::Box& bbox);
-    void draw_car_bbox(CarBbox car_bboxs, cv::Mat& frame);
-
     void multiThresholdBinary(const cv::Mat& src, std::vector<cv::Mat>& binarys);
-    void detectLightPairs(const cv::Mat& binary, std::vector<std::pair<cv::RotatedRect, cv::RotatedRect>>& pairs);
+    void detectLightPairs(const cv::Mat& binary,
+        std::vector<std::pair<cv::RotatedRect, cv::RotatedRect>>& pairs);
     bool isValidPair(const cv::RotatedRect& r1, const cv::RotatedRect& r2);
     void removeDuplicates(std::vector<std::pair<cv::RotatedRect, cv::RotatedRect>>& pairs);
-
-    UAVTarget createUAVTarget(const cv::RotatedRect& top, const cv::RotatedRect& bottom, const cv::Mat& frame, std::chrono::steady_clock::time_point timestamp);
+    UAVTarget createUAVTarget(const cv::RotatedRect& top, const cv::RotatedRect& bottom,
+        const cv::Mat& frame);
     cv::Rect2f calculateBoundingBox(const cv::RotatedRect& top, const cv::RotatedRect& bottom);
-    std::vector<cv::Point2f> calculateROIVertices(const cv::RotatedRect& top, const cv::RotatedRect& bottom);
+    std::vector<cv::Point2f> calculateROIVertices(const cv::RotatedRect& top,
+        const cv::RotatedRect& bottom);
     float calculateConfidence(const UAVTarget& target);
     bool validateTarget(const UAVTarget& target);
-    int assignID(const UAVTarget& target);
+};
+
+// ============================================================================
+// YOLO-based detector
+// ============================================================================
+class YOLODetector : public BaseDetector {
+public:
+    YOLODetector();
+
+    std::vector<UAVTarget> detect(const cv::Mat& frame,
+        std::chrono::steady_clock::time_point timestamp) override;
+    cv::Mat visualize(const cv::Mat& frame,
+        const std::vector<UAVTarget>& targets) override;
+
+private:
+    std::shared_ptr<trtyolo::DetectModel> model_;
+    CarBbox last_car_bboxs_;  // cached from last detect() for visualization
+
+    std::pair<Bbox, CarBbox> detectOnce(const cv::Mat& image);
+    cv::Rect getRect(cv::Mat& img, const trtyolo::Box& bbox);
+    void drawCarBbox(const CarBbox& car_bboxs, cv::Mat& frame);
+};
+
+// ============================================================================
+// Detector factory — reads config and selects the appropriate detector
+// ============================================================================
+class Detector {
+public:
+    explicit Detector(const std::string& config_path);
+
+    std::vector<UAVTarget> detect(const cv::Mat& frame,
+        std::chrono::steady_clock::time_point timestamp);
+    cv::Mat visualize(const cv::Mat& frame,
+        const std::vector<UAVTarget>& targets);
+
+private:
+    std::unique_ptr<BaseDetector> detector_;
 };

@@ -1,5 +1,7 @@
 drone_engine_file: "./models/antidronev3.engine"
 
+detector_option: "yolo"  # "yolo" or "uav"
+
 yolo_option: true
 uav_option: false
 
