@@ -54,6 +54,7 @@ void BaseDetector::estimatePose(UAVTarget& target, float pixel_spacing, float re
 }
 
 cv::Point3d BaseDetector::computeLaserAimPoint(const cv::Point3d& target_cam) {
+    return target_cam;
     using namespace Eigen;
 
     const Vector3d S0(36.71872987, -7.4622397, 1.0);

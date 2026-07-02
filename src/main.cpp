@@ -1,6 +1,7 @@
 #include "aimer.hpp"
 #include "scanner.hpp"
 #include <yaml-cpp/yaml.h>
+#include "tools/plotter.hpp"
 #include "tools/recorder.hpp"
 #include "tracker.hpp"
 
@@ -50,7 +51,9 @@ int main(int argc, char** argv) {
         Scanner scanner(config_path);
 
         tools::Recorder recorder(fps_);
-        
+        tools::Plotter plotter("127.0.0.1", 9870);
+        aimer.set_plotter(&plotter);
+
         if (start_check)
         {
             std::cout << "Sending gimbal reset command for 10 seconds..." << std::endl;
@@ -98,21 +101,91 @@ int main(int argc, char** argv) {
             if (key == 'q') break;
 
 
+            // // --- plot frame timing ---
+            // {
+            //     nlohmann::json j;
+            //     j["type"] = "timing";
+            //     j["dt"] = dt;
+            //     j["fps"] = (dt > 0) ? (1.0 / dt) : 0.0;
+            //     plotter.plot(j);
+            // }
+
             auto q_s = gimbal.state();
+
+            // --- plot gimbal state ---
+            {
+                nlohmann::json j;
+                j["type"] = "gimbal_state";
+                j["yaw_deg"] = q_s.yaw * 180.0 / M_PI;
+                j["pitch_deg"] = q_s.pitch * 180.0 / M_PI;
+                j["yaw_vel"] = q_s.yaw_vel;
+                j["pitch_vel"] = q_s.pitch_vel;
+                j["bullet_speed"] = q_s.bullet_speed;
+                j["supercap_voltage"] = q_s.supercap_voltage;
+                plotter.plot(j);
+            }
+
             std::cout << "Gimbal State - Yaw: " << q_s.yaw * 180 / M_PI
                       << ", Pitch: " << q_s.pitch * 180 / M_PI << std::endl;
+
             if (!targets.empty()) {
                 scanner.reset(timestamp);
+
+                // --- plot raw detection ---
+                {
+                    const auto& t = targets[0];
+                    nlohmann::json j;
+                    j["type"] = "detection";
+                    j["has_target"] = true;
+                    j["id"] = t.id;
+                    j["confidence"] = t.confidence;
+                    j["center_x"] = t.center.x;
+                    j["center_y"] = t.center.y;
+                    j["bbox_x"] = t.bounding_box.x;
+                    j["bbox_y"] = t.bounding_box.y;
+                    j["bbox_w"] = t.bounding_box.width;
+                    j["bbox_h"] = t.bounding_box.height;
+                    j["pos_x"] = t.position.x;
+                    j["pos_y"] = t.position.y;
+                    j["pos_z"] = t.position.z;
+                    j["distance"] = t.distance;
+                    plotter.plot(j);
+                }
+
                 auto [yaw_raw, pitch_raw] = aimer.aim(targets[0], timestamp);
                 std::cout << "Aiming at target - Yaw: " << yaw_raw * 180 / M_PI
                           << " degrees, Pitch: " << pitch_raw * 180 / M_PI << " degrees" << std::endl;
 
+                // --- plot raw aim angles ---
+                {
+                    nlohmann::json j;
+                    j["type"] = "aim";
+                    j["yaw_raw_deg"] = yaw_raw * 180.0 / M_PI;
+                    j["pitch_raw_deg"] = pitch_raw * 180.0 / M_PI;
+                    plotter.plot(j);
+                }
+
                 auto [yaw_filt, pitch_filt] = tracker.update(yaw_raw, pitch_raw, dt);
+                const auto& ekf_data = tracker.data();
+
+                // // --- plot tracker / EKF diagnostics ---
+                // {
+                //     nlohmann::json j;
+                //     j["type"] = "tracker";
+                //     j["yaw_filt_deg"] = yaw_filt * 180.0 / M_PI;
+                //     j["pitch_filt_deg"] = pitch_filt * 180.0 / M_PI;
+                //     j["yaw_raw_deg"] = yaw_raw * 180.0 / M_PI;
+                //     j["pitch_raw_deg"] = pitch_raw * 180.0 / M_PI;
+                //     j["nis"] = (ekf_data.count("nis") ? ekf_data.at("nis") : 0.0);
+                //     j["nees"] = (ekf_data.count("nees") ? ekf_data.at("nees") : 0.0);
+                //     j["nis_fail"] = (ekf_data.count("nis_fail") ? ekf_data.at("nis_fail") : 0.0);
+                //     j["nees_fail"] = (ekf_data.count("nees_fail") ? ekf_data.at("nees_fail") : 0.0);
+                //     plotter.plot(j);
+                // }
 
                 std::cout << "Filtered - Yaw: " << yaw_filt * 180 / M_PI
-                        << "°, Pitch: " << pitch_filt * 180 / M_PI << "°" << std::endl;
+                          << "°, Pitch: " << pitch_filt * 180 / M_PI << "°" << std::endl;
 
-                const auto& ekf_data = tracker.data();
                 std::cout << "EKF Data - NIS: " << (ekf_data.count("nis") ? ekf_data.at("nis") : 0)
                           << ", NEES: " << (ekf_data.count("nees") ? ekf_data.at("nees") : 0)
                           << ", NIS Fail: " << (ekf_data.count("nis_fail") ? ekf_data.at("nis_fail") : 0)
@@ -120,14 +193,33 @@ int main(int argc, char** argv) {
                           << std::endl;
 
                 // Send to gimbal
-                gimbal.send(true, false, yaw_filt, 0, 0, pitch_filt + (0.26 * M_PI / 180), 0, 0);
+                gimbal.send(true, false, yaw_raw, 0, 0, pitch_raw , 0, 0);
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
             } else {
+                // --- plot no-target status ---
+                {
+                    nlohmann::json j;
+                    j["type"] = "detection";
+                    j["has_target"] = false;
+                    plotter.plot(j);
+                }
+
                 if (scan_on){
                     auto scan_pos = scanner.update(timestamp);
                     if (scan_pos) {
                         std::cout << "Scanning - Yaw: " << scan_pos->first * 180 / M_PI
                                 << "°, Pitch: " << scan_pos->second * 180 / M_PI << "°" << std::endl;
+
+                        // --- plot scan position ---
+                        {
+                            nlohmann::json j;
+                            j["type"] = "scan";
+                            j["yaw_deg"] = scan_pos->first * 180.0 / M_PI;
+                            j["pitch_deg"] = scan_pos->second * 180.0 / M_PI;
+                            plotter.plot(j);
+                        }
+
                         gimbal.send(true, false, scan_pos->first, 0, 0, scan_pos->second, 0, 0);
                     }
                 }
@@ -148,6 +240,7 @@ int main(int argc, char** argv) {
 
         Detector detector(config_path);
         Scanner scanner(config_path);
+        tools::Plotter plotter("127.0.0.1", 9870);
 
         
         std::string video_path = argv[2];
@@ -184,6 +277,31 @@ int main(int argc, char** argv) {
             std::vector<UAVTarget> targets;
 
             targets = detector.detect(frame, timestamp);
+
+            // --- plot detection data (video mode) ---
+            {
+                nlohmann::json j;
+                j["type"] = "detection";
+                j["has_target"] = !targets.empty();
+                j["frame_count"] = frame_count;
+                if (!targets.empty()) {
+                    const auto& t = targets[0];
+                    j["id"] = t.id;
+                    j["confidence"] = t.confidence;
+                    j["center_x"] = t.center.x;
+                    j["center_y"] = t.center.y;
+                    j["bbox_x"] = t.bounding_box.x;
+                    j["bbox_y"] = t.bounding_box.y;
+                    j["bbox_w"] = t.bounding_box.width;
+                    j["bbox_h"] = t.bounding_box.height;
+                    j["pos_x"] = t.position.x;
+                    j["pos_y"] = t.position.y;
+                    j["pos_z"] = t.position.z;
+                    j["distance"] = t.distance;
+                }
+                plotter.plot(j);
+            }
+
             cv::Mat display = detector.visualize(frame, targets);
             cv::resizeWindow("UAV Detector - Camera", cv::Size(1920, 1280));
             cv::imshow("UAV Detector - Camera", display);
@@ -191,7 +309,7 @@ int main(int argc, char** argv) {
             char key = cv::waitKey(1);
             if (key == 'q') break;
         }
-        
+
         cap.release();
     }
     else {
