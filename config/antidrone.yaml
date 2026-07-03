@@ -1,9 +1,9 @@
-drone_engine_file: "./models/antidronev3.engine"
+drone_engine_file: "./models/antidronev2.engine"
 
-detector_option: "yolo"  # "yolo" or "uav"
+detector_option: "uav"  # "yolo" or "uav"
 
-yolo_option: true
-uav_option: false
+# yolo_option: true
+# uav_option: false
 
 T_camera2gimbal: [ 0.0,  0.0, 1.0, 0.08915, 
                   -1.0,  0.0, 0.0,  0.0150, 
@@ -26,12 +26,12 @@ distort_coeffs: [0.52339467406775086, 43.115297379766723, 0.00078266127498807922
 
 rotation_angle: 0
 
-record_video: true
+record_video: false
 
 start_check: false
 
 ##########扫描参数##########
-scan_option: true
+scan_option: false
 
 scan_center_yaw_deg: 3
 scan_center_pitch_deg: 4

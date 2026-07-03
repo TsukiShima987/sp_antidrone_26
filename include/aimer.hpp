@@ -2,6 +2,7 @@
 #include <yaml-cpp/yaml.h>
 #include "../io/gimbal/gimbal.hpp"
 #include "../io/camera.hpp"
+#include "tools/plotter.hpp"
 
 
 class Aimer {
@@ -30,6 +31,10 @@ public:
         gimbal = gimbal_ptr;
     }
 
+    void set_plotter(tools::Plotter * plotter_ptr) {
+        plotter = plotter_ptr;
+    }
+
     std::pair<double, double> aim(const UAVTarget& target, std::chrono::steady_clock::time_point timestamp) {
         double x = target.position.x;
         double y = target.position.y;
@@ -49,6 +54,22 @@ public:
         Eigen::Vector3d p_world = solver.R_gimbal2world() * p_gimbal;
         std::cout << "Target position (world frame) - x: " << p_world.x() << " m, y: " << p_world.y() << " m, z: " << p_world.z() << " m" << std::endl;
 
+        // --- plot target position in all three coordinate frames ---
+        if (plotter) {
+            nlohmann::json j;
+            j["type"] = "target_position";
+            j["camera"]["x"] = x;
+            j["camera"]["y"] = y;
+            j["camera"]["z"] = z;
+            j["gimbal"]["x"] = rel_gim.x;
+            j["gimbal"]["y"] = rel_gim.y;
+            j["gimbal"]["z"] = rel_gim.z;
+            j["world"]["x"] = p_world.x();
+            j["world"]["y"] = p_world.y();
+            j["world"]["z"] = p_world.z();
+            plotter->plot(j);
+        }
+
         double world_x = p_world.x();
         double world_y = p_world.y();
         double world_z = p_world.z();
@@ -60,6 +81,7 @@ public:
     }
 
 private:
-    io::Gimbal * gimbal;
+    io::Gimbal * gimbal = nullptr;
+    tools::Plotter * plotter = nullptr;
     cv::Mat T_camera2gimbal;
 };
