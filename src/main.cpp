@@ -1,9 +1,14 @@
-#include "aimer.hpp"
+#include "solver.hpp"
 #include "scanner.hpp"
 #include <yaml-cpp/yaml.h>
 #include "tools/plotter.hpp"
 #include "tools/recorder.hpp"
+#include "tools/math_tools.hpp"
+#include "io/camera.hpp"
 #include "tracker.hpp"
+#include "detector.hpp"
+#include "scanner.hpp"
+#include "target.hpp"
 
 int main(int argc, char** argv) {
     cv::Mat frame;
@@ -43,16 +48,16 @@ int main(int argc, char** argv) {
         // auto needed_file_ = std::make_unique<std::string>();
         // *needed_file_ = config["camera_config_file"].as<std::string>();
         camera = std::make_unique<io::Camera>(config_path);
-        Aimer aimer(config_path);
+        Solver solver(config_path);
         io::Gimbal gimbal(config_path);
         Detector detector(config_path);
         tools::Tracker tracker;
-        aimer.set_gimbal(&gimbal);
+        solver.set_gimbal(&gimbal);
         Scanner scanner(config_path);
 
         tools::Recorder recorder(fps_);
         tools::Plotter plotter("127.0.0.1", 9870);
-        aimer.set_plotter(&plotter);
+        solver.set_plotter(&plotter);
 
         if (start_check)
         {
@@ -116,8 +121,8 @@ int main(int argc, char** argv) {
             {
                 nlohmann::json j;
                 j["type"] = "gimbal_state";
-                j["yaw_deg"] = q_s.yaw * 180.0 / M_PI;
-                j["pitch_deg"] = q_s.pitch * 180.0 / M_PI;
+                j["yaw_deg"] = tools::rad2deg(q_s.yaw);
+                j["pitch_deg"] = tools::rad2deg(q_s.pitch);
                 j["yaw_vel"] = q_s.yaw_vel;
                 j["pitch_vel"] = q_s.pitch_vel;
                 j["bullet_speed"] = q_s.bullet_speed;
@@ -125,8 +130,8 @@ int main(int argc, char** argv) {
                 plotter.plot(j);
             }
 
-            std::cout << "Gimbal State - Yaw: " << q_s.yaw * 180 / M_PI
-                      << ", Pitch: " << q_s.pitch * 180 / M_PI << std::endl;
+            std::cout << "Gimbal State - Yaw: " << tools::rad2deg(q_s.yaw)
+                      << ", Pitch: " << tools::rad2deg(q_s.pitch) << std::endl;
 
             if (!targets.empty()) {
                 scanner.reset(timestamp);
@@ -152,30 +157,39 @@ int main(int argc, char** argv) {
                     plotter.plot(j);
                 }
 
-                auto [yaw_raw, pitch_raw] = aimer.aim(targets[0], timestamp);
-                std::cout << "Aiming at target - Yaw: " << yaw_raw * 180 / M_PI
-                          << " degrees, Pitch: " << pitch_raw * 180 / M_PI << " degrees" << std::endl;
+                solver.solve(targets[0], timestamp);
+                std::cout << "Aiming at target - Yaw: " << tools::rad2deg(targets[0].yaw)
+                          << " degrees, Pitch: " << tools::rad2deg(targets[0].pitch) << " degrees" << std::endl;
 
                 // --- plot raw aim angles ---
                 {
                     nlohmann::json j;
                     j["type"] = "aim";
-                    j["yaw_raw_deg"] = yaw_raw * 180.0 / M_PI;
-                    j["pitch_raw_deg"] = pitch_raw * 180.0 / M_PI;
+                    j["yaw_raw_deg"] = tools::rad2deg(targets[0].yaw);
+                    j["pitch_raw_deg"] = tools::rad2deg(targets[0].pitch);
+                    plotter.plot(j);
+                }
+                // 计算从相机读取到这一行的时间间隔
+                auto time_now = std::chrono::steady_clock::now();
+                double time_interval = std::chrono::duration<double>(time_now - timestamp).count();
+                {
+                    nlohmann::json j;
+                    j["type"] = "time_interval";
+                    j["time_interval"] = time_interval;
                     plotter.plot(j);
                 }
 
-                auto [yaw_filt, pitch_filt] = tracker.update(yaw_raw, pitch_raw, dt);
+                tracker.update(targets[0], dt);
                 const auto& ekf_data = tracker.data();
 
                 // // --- plot tracker / EKF diagnostics ---
                 // {
                 //     nlohmann::json j;
                 //     j["type"] = "tracker";
-                //     j["yaw_filt_deg"] = yaw_filt * 180.0 / M_PI;
-                //     j["pitch_filt_deg"] = pitch_filt * 180.0 / M_PI;
-                //     j["yaw_raw_deg"] = yaw_raw * 180.0 / M_PI;
-                //     j["pitch_raw_deg"] = pitch_raw * 180.0 / M_PI;
+                //     j["yaw_filt_deg"] = tools::rad2deg(yaw_filt);
+                //     j["pitch_filt_deg"] = tools::rad2deg(pitch_filt);
+                //     j["yaw_raw_deg"] = tools::rad2deg(yaw_raw);
+                //     j["pitch_raw_deg"] = tools::rad2deg(pitch_raw);
                 //     j["nis"] = (ekf_data.count("nis") ? ekf_data.at("nis") : 0.0);
                 //     j["nees"] = (ekf_data.count("nees") ? ekf_data.at("nees") : 0.0);
                 //     j["nis_fail"] = (ekf_data.count("nis_fail") ? ekf_data.at("nis_fail") : 0.0);
@@ -183,8 +197,8 @@ int main(int argc, char** argv) {
                 //     plotter.plot(j);
                 // }
 
-                std::cout << "Filtered - Yaw: " << yaw_filt * 180 / M_PI
-                          << "°, Pitch: " << pitch_filt * 180 / M_PI << "°" << std::endl;
+                std::cout << "Filtered - Yaw: " << tools::rad2deg(targets[0].predict_yaw)
+                          << "°, Pitch: " << tools::rad2deg(targets[0].predict_pitch) << "°" << std::endl;
 
                 std::cout << "EKF Data - NIS: " << (ekf_data.count("nis") ? ekf_data.at("nis") : 0)
                           << ", NEES: " << (ekf_data.count("nees") ? ekf_data.at("nees") : 0)
@@ -193,7 +207,7 @@ int main(int argc, char** argv) {
                           << std::endl;
 
                 // Send to gimbal
-                gimbal.send(true, false, yaw_raw, 0, 0, pitch_raw , 0, 0);
+                gimbal.send(true, false, targets[0].yaw, 0, 0, targets[0].pitch, 0, 0);
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
             } else {
@@ -208,15 +222,15 @@ int main(int argc, char** argv) {
                 if (scan_on){
                     auto scan_pos = scanner.update(timestamp);
                     if (scan_pos) {
-                        std::cout << "Scanning - Yaw: " << scan_pos->first * 180 / M_PI
-                                << "°, Pitch: " << scan_pos->second * 180 / M_PI << "°" << std::endl;
+                        std::cout << "Scanning - Yaw: " << tools::rad2deg(scan_pos->first)
+                                << "°, Pitch: " << tools::rad2deg(scan_pos->second) << "°" << std::endl;
 
                         // --- plot scan position ---
                         {
                             nlohmann::json j;
                             j["type"] = "scan";
-                            j["yaw_deg"] = scan_pos->first * 180.0 / M_PI;
-                            j["pitch_deg"] = scan_pos->second * 180.0 / M_PI;
+                            j["yaw_deg"] = tools::rad2deg(scan_pos->first);
+                            j["pitch_deg"] = tools::rad2deg(scan_pos->second);
                             plotter.plot(j);
                         }
 

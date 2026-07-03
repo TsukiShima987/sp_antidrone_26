@@ -7,18 +7,16 @@ BaseDetector::BaseDetector() {
     std::string config_path = "config/antidrone.yaml";
     const auto config = YAML::LoadFile(config_path);
 
-  auto camera_matrix_data = config["camera_matrix"].as<std::vector<double>>();
-  auto distort_coeffs_data = config["distort_coeffs"].as<std::vector<double>>();
-  auto T_camera2gimbal_data = config["T_camera2gimbal"].as<std::vector<double>>();
-  auto laser_offset_data = config["laser_offset"].as<std::vector<double>>();
-  auto laser_direction_data = config["laser_direction"].as<std::vector<double>>();
+    auto camera_matrix_data = config["camera_matrix"].as<std::vector<double>>();
+    auto distort_coeffs_data = config["distort_coeffs"].as<std::vector<double>>();
+    auto laser_offset_data = config["laser_offset"].as<std::vector<double>>();
+    auto laser_direction_data = config["laser_direction"].as<std::vector<double>>();
 
-  camera_matrix = cv::Matx33d(camera_matrix_data.data());
-  dist_coeffs = cv::Mat(distort_coeffs_data);
-  T_camera2gimbal = cv::Matx44d(T_camera2gimbal_data.data());
-  S0 = Eigen::Vector3d(laser_offset_data.data());
-  d0 = Eigen::Vector3d(laser_direction_data.data());
-  d0.normalize();
+    camera_matrix = cv::Matx33d(camera_matrix_data.data());
+    dist_coeffs = cv::Mat(distort_coeffs_data);
+    S0 = Eigen::Vector3d(laser_offset_data.data());
+    d0 = Eigen::Vector3d(laser_direction_data.data());
+    d0.normalize();
 }
 
 void BaseDetector::estimatePose(UAVTarget& target, float pixel_spacing, float real_size,
@@ -32,7 +30,7 @@ void BaseDetector::estimatePose(UAVTarget& target, float pixel_spacing, float re
     double x = (center.x - cx) * z / fx;
     double y = (center.y - cy) * z / fy;
 
-    target.position = computeLaserAimPoint(cv::Point3d(x, y, z));
+    target.position = computeLaserAimPoint(cv::Point3d(-x, -y, z));
     target.distance = cv::norm(target.position);
 }
 
