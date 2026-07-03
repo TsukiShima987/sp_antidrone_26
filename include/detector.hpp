@@ -73,6 +73,8 @@ protected:
     const float real_object_height = 0.067f;
     std::string config_path = "io/configs/camera.yaml";
     cv::Matx44d T_camera2gimbal;
+    Eigen::Vector3d S0;   // laser position in camera frame (meters)
+    Eigen::Vector3d d0;   // laser direction in camera frame (unit vector)
     int next_id = 0;
 
     void estimatePose(UAVTarget& target, float pixel_spacing, float real_size,
