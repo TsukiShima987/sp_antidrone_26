@@ -4,6 +4,7 @@
 #include <map>
 #include <memory>
 #include <utility>
+#include "target.hpp"
 
 namespace tools {
 
@@ -14,9 +15,9 @@ public:
     Tracker();
     ~Tracker();
 
-    /// Update filter with a new (yaw, pitch) measurement.
-    /// @returns filtered (yaw, pitch) in radians.
-    std::pair<double, double> update(double yaw_raw, double pitch_raw, double dt);
+    /// Update filter with a target's (yaw, pitch) measurement.
+    /// Reads target.yaw / target.pitch, writes target.predict_yaw / target.predict_pitch.
+    void update(UAVTarget& target, double dt);
 
     /// Reset filter — next update() will re-initialize.
     void reset();

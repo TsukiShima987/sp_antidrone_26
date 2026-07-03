@@ -7,6 +7,9 @@
 
 namespace tools
 {
+// 弧度转角度
+inline double rad2deg(double rad) { return rad * 180.0 / M_PI; }
+
 // 将弧度值限制在(-pi, pi]
 double limit_rad(double angle);
 
