@@ -67,12 +67,12 @@ public:
         const std::vector<UAVTarget>& targets) = 0;
 
 protected:
-    cv::Mat camera_matrix;
+    cv::Matx33d camera_matrix;
     cv::Mat dist_coeffs;
     const float real_spacing = 0.042f;
     const float real_object_height = 0.067f;
     std::string config_path = "io/configs/camera.yaml";
-    cv::Mat T_camera2gimbal;
+    cv::Matx44d T_camera2gimbal;
     int next_id = 0;
 
     void estimatePose(UAVTarget& target, float pixel_spacing, float real_size,

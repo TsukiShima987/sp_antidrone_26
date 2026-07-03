@@ -4,52 +4,30 @@
 #include <Eigen/Geometry>
 
 BaseDetector::BaseDetector() {
-    camera_matrix = (cv::Mat_<double>(3, 3) << 30164.346973727235, 0,                  1585.3978670158735,
-                                               0,                  29990.338352363626, 1027.6312267976482,
-                                               0,                  0,                  1                  );
-    dist_coeffs = (cv::Mat_<double>(5, 1) << 0.47187615502896024,
-                                               23.566194187549524,
-                                               0.037885849822472041,
-                                               0.0028823047400091048,
-                                               0                     );
     std::string config_path = "config/antidrone.yaml";
     const auto config = YAML::LoadFile(config_path);
 
-    T_camera2gimbal = cv::Mat::eye(4, 4, CV_64F);
-    try {
-        if (config["T_camera2gimbal"] && config["T_camera2gimbal"].IsSequence()) {
-            auto rows = config["T_camera2gimbal"];
-            for (size_t i = 0; i < 4; ++i) {
-                auto row = rows[i];
-                for (size_t j = 0; j < 4; ++j) {
-                    T_camera2gimbal.at<double>(i, j) = row[j].as<double>();
-                }
-            }
-        } else {
-            std::cerr << "Missing or invalid T_camera2gimbal in yaml" << std::endl;
-        }
-    } catch (const YAML::Exception& e) {
-        std::cerr << "YAML parse error: " << e.what() << std::endl;
-    }
+  auto camera_matrix_data = config["camera_matrix"].as<std::vector<double>>();
+  auto distort_coeffs_data = config["distort_coeffs"].as<std::vector<double>>();
+  auto T_camera2gimbal_data = config["T_camera2gimbal"].as<std::vector<double>>();
+
+  camera_matrix = cv::Matx33d(camera_matrix_data.data());
+  dist_coeffs = cv::Mat(distort_coeffs_data);
+  T_camera2gimbal = cv::Matx44d(T_camera2gimbal_data.data());
 }
 
 void BaseDetector::estimatePose(UAVTarget& target, float pixel_spacing, float real_size,
                                  const cv::Point2f& center) {
-    float fx = camera_matrix.at<double>(0, 0);
-    float fy = camera_matrix.at<double>(1, 1);
-    float cx = camera_matrix.at<double>(0, 2);
-    float cy = camera_matrix.at<double>(1, 2);
+    float fx = camera_matrix(0, 0);
+    float fy = camera_matrix(1, 1);
+    float cx = camera_matrix(0, 2);
+    float cy = camera_matrix(1, 2);
 
     double z = (fy * real_size) / pixel_spacing;
     double x = (center.x - cx) * z / fx;
     double y = (center.y - cy) * z / fy;
 
-    cv::Point3d aim_point = computeLaserAimPoint(cv::Point3d(x, y, z));
-    x = -aim_point.x;
-    y = -aim_point.y;
-    z = aim_point.z;
-
-    target.position = cv::Point3f(x, y, z);
+    target.position = computeLaserAimPoint(cv::Point3d(x, y, z));
     target.distance = cv::norm(target.position);
 }
 

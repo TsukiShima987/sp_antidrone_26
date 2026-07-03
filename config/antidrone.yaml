@@ -5,11 +5,10 @@ detector_option: "yolo"  # "yolo" or "uav"
 yolo_option: true
 uav_option: false
 
-T_camera2gimbal:
-  - [0.0, 0.0, 1.0, 0.08915]
-  - [-1.0, 0.0, 0.0, 0.0150]
-  - [0.0, -1.0, 0.0, 0.0215]
-  - [0.0, 0.0, 0.0, 1.0]
+T_camera2gimbal: [ 0.0,  0.0, 1.0, 0.08915, 
+                  -1.0,  0.0, 0.0,  0.0150, 
+                   0.0, -1.0, 0.0,  0.0215, 
+                   0.0,  0.0, 0.0,     1.0]
 
 com_port: "/dev/gimbal"
 
