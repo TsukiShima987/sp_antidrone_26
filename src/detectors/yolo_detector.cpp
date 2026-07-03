@@ -48,14 +48,14 @@ cv::Mat YOLODetector::visualize(const cv::Mat& frame,
     cv::cvtColor(display, display, cv::COLOR_BGR2RGB);
 
     // Draw all YOLO detections from last inference
-    drawCarBbox(last_car_bboxs_, display);
+    // drawCarBbox(last_car_bboxs_, display);
 
     cv::cvtColor(display, display, cv::COLOR_RGB2BGR);
 
     // Draw UAVTarget overlays
     for (const auto& target : targets) {
         cv::Scalar color(0x27, 0xC1, 0x36);  // green
-        cv::rectangle(display, target.bounding_box, color, 2);
+        cv::rectangle(display, target.bounding_box, color, 1);
 
         std::string label = cv::format("ID:%d Conf:%.2f Dist:%.1fm",
                                        target.id, target.confidence, target.distance);

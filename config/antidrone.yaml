@@ -1,4 +1,4 @@
-drone_engine_file: "./models/antidronev2.engine"
+drone_engine_file: "./models/antidronev3.engine"
 
 detector_option: "yolo"  # "yolo" or "uav"
 

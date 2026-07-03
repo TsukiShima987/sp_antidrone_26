@@ -9,7 +9,9 @@ Tracker::Tracker() = default;
 
 Tracker::~Tracker() = default;
 
-std::pair<double, double> Tracker::update(double yaw_raw, double pitch_raw, double dt) {
+void Tracker::update(UAVTarget& target, double dt) {
+    double yaw_raw = target.yaw;
+    double pitch_raw = target.pitch;
     // --- first measurement: initialize EKF ---
     if (!ekf_) {
         Eigen::VectorXd x0(4);
@@ -43,8 +45,13 @@ std::pair<double, double> Tracker::update(double yaw_raw, double pitch_raw, doub
 
     ekf_->update(z, H, R, observationModel, zSubtract);
 
+    double calculating_delay = 0.01; // 10ms
+    double excuting_delay = 0.01; // 10ms
+    double delay = calculating_delay + excuting_delay;
+
     Eigen::VectorXd x_filt = ekf_->getState();
-    return {x_filt(0), x_filt(1)};
+    target.predict_yaw = x_filt(0) + x_filt(2) * delay;
+    target.predict_pitch = x_filt(1) + x_filt(3) * delay;
 }
 
 void Tracker::reset() {
