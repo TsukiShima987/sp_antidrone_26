@@ -8,23 +8,10 @@
 class Aimer {
 public:
     Aimer(std::string config_path) {
-        T_camera2gimbal = cv::Mat::eye(4, 4, CV_64F);
-        try {
-            YAML::Node config = YAML::LoadFile(config_path);
-            if (config["T_camera2gimbal"] && config["T_camera2gimbal"].IsSequence()) {
-                auto rows = config["T_camera2gimbal"];
-                for (size_t i = 0; i < 4; ++i) {
-                    auto row = rows[i];
-                    for (size_t j = 0; j < 4; ++j) {
-                        T_camera2gimbal.at<double>(i, j) = row[j].as<double>();
-                    }
-                }
-            } else {
-                std::cerr << "Missing or invalid T_camera2gimbal in yaml" << std::endl;
-            }
-        } catch (const YAML::Exception& e) {
-            std::cerr << "YAML parse error: " << e.what() << std::endl;
-        }
+        const auto config = YAML::LoadFile(config_path);
+
+        auto T_camera2gimbal_data = config["T_camera2gimbal"].as<std::vector<double>>();
+        T_camera2gimbal = cv::Matx44d(T_camera2gimbal_data.data());
     }
 
     void set_gimbal(io::Gimbal * gimbal_ptr) {
@@ -83,5 +70,5 @@ public:
 private:
     io::Gimbal * gimbal = nullptr;
     tools::Plotter * plotter = nullptr;
-    cv::Mat T_camera2gimbal;
+    cv::Matx44d T_camera2gimbal;
 };

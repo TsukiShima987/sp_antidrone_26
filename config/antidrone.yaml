@@ -1,6 +1,6 @@
 drone_engine_file: "./models/antidronev2.engine"
 
-detector_option: "uav"  # "yolo" or "uav"
+detector_option: "yolo"  # "yolo" or "uav"
 
 # yolo_option: true
 # uav_option: false
