@@ -30,11 +30,12 @@ void BaseDetector::estimatePose(UAVTarget& target, float pixel_spacing, float re
     double x = (center.x - cx) * z / fx;
     double y = (center.y - cy) * z / fy;
 
-    target.position = computeLaserAimPoint(cv::Point3d(-x, -y, z));
+    target.position = computeLaserAimPoint(cv::Point3d(x, y, z));
     target.distance = cv::norm(target.position);
 }
 
 cv::Point3d BaseDetector::computeLaserAimPoint(const cv::Point3d& target_cam) {
+    
     using namespace Eigen;
 
     Vector3d p_cam(target_cam.x, target_cam.y, target_cam.z);

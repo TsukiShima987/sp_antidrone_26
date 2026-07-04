@@ -182,6 +182,14 @@ int main(int argc, char** argv) {
                 tracker.update(targets[0], dt);
                 const auto& ekf_data = tracker.data();
 
+                {
+                    nlohmann::json j;
+                    j["type"] = "114";
+                    j["predict_yaw"] =  tools::rad2deg(targets[0].predict_yaw);
+                    j["predict_pitch"] =  tools::rad2deg(targets[0].predict_pitch);
+                    plotter.plot(j);
+                }
+
                 // // --- plot tracker / EKF diagnostics ---
                 // {
                 //     nlohmann::json j;
@@ -207,8 +215,8 @@ int main(int argc, char** argv) {
                           << std::endl;
 
                 // Send to gimbal
-                gimbal.send(true, false, targets[0].yaw, 0, 0, targets[0].pitch, 0, 0);
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                gimbal.send(true, false, targets[0].predict_yaw, 0, 0, targets[0].predict_pitch, 0, 0);
+                // std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
             } else {
                 // --- plot no-target status ---

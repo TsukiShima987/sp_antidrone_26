@@ -51,7 +51,7 @@ protected:
     cv::Matx33d camera_matrix;
     cv::Mat dist_coeffs;
     const float real_spacing = 0.042f;
-    const float real_object_height = 0.067f;
+    const float real_object_height = 0.0536f;
     std::string config_path = "io/configs/camera.yaml";
     cv::Matx44d T_camera2gimbal;
     Eigen::Vector3d S0;   // laser position in camera frame (meters)

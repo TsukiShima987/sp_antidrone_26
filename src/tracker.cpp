@@ -45,9 +45,10 @@ void Tracker::update(UAVTarget& target, double dt) {
 
     ekf_->update(z, H, R, observationModel, zSubtract);
 
-    double calculating_delay = 0.01; // 10ms
-    double excuting_delay = 0.01; // 10ms
-    double delay = calculating_delay + excuting_delay;
+    double calculating_delay = 0.06; // 10ms
+    double excuting_delay = 0.018; // 10ms
+    double adjust_delay = -0.0;
+    double delay = calculating_delay + excuting_delay + adjust_delay;
 
     Eigen::VectorXd x_filt = ekf_->getState();
     target.predict_yaw = x_filt(0) + x_filt(2) * delay;
