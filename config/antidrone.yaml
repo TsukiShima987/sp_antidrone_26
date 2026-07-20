@@ -13,8 +13,8 @@ T_camera2gimbal: [ 0.0,  0.0, 1.0, 0.08915,
 com_port: "/dev/gimbal"
 
 ##########laser参数 (相机坐标系, 米)##########
-laser_offset: [0.09671872987, -0.0874622397, 0.001]
-laser_direction: [0.00409691, 0.00001795, 0.99998631]
+laser_offset: [0.03362045536, -0.00319075302, 0]
+laser_direction: [-0.00368723, -0.00418884, 0.99998662]
 
 ##########camera参数##########
 camera_name: "hikrobot_sn"

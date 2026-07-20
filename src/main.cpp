@@ -88,9 +88,21 @@ int main(int argc, char** argv) {
             first_measurement = false;
 
             auto q = gimbal.q(timestamp);
+
+            // --- plot quaternion to Euler (RPY) ---
+            {
+                Eigen::Vector3d rpy = q.toRotationMatrix().eulerAngles(2, 1, 0);  // XYZ = RPY [roll, pitch, yaw]
+                nlohmann::json j;
+                j["type"] = "quat_euler";
+                j["roll_deg_q"]  = tools::rad2deg(rpy[2]);
+                j["pitch_deg_q"] = tools::rad2deg(rpy[1]);
+                j["yaw_deg_q"]   = tools::rad2deg(rpy[0]);
+                plotter.plot(j);
+            }
+
             if (is_recording_) {
                         // video_writer_.write(frame);
-                    recorder.record(frame, q, timestamp);
+                recorder.record(frame, q, timestamp);
             }
 
             // visualizer.visualizeFrame(frame, timestamp);
@@ -215,39 +227,11 @@ int main(int argc, char** argv) {
                           << std::endl;
 
                 // Send to gimbal
-                gimbal.send(true, false, targets[0].predict_yaw, 0, 0, targets[0].predict_pitch, 0, 0);
+                gimbal.send(true, false, targets[0].yaw, 0, 0, targets[0].pitch, 0, 0);
                 // std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
             } else {
-                // --- plot no-target status ---
-                {
-                    nlohmann::json j;
-                    j["type"] = "detection";
-                    j["has_target"] = false;
-                    plotter.plot(j);
-                }
-
-                if (scan_on){
-                    auto scan_pos = scanner.update(timestamp);
-                    if (scan_pos) {
-                        std::cout << "Scanning - Yaw: " << tools::rad2deg(scan_pos->first)
-                                << "°, Pitch: " << tools::rad2deg(scan_pos->second) << "°" << std::endl;
-
-                        // --- plot scan position ---
-                        {
-                            nlohmann::json j;
-                            j["type"] = "scan";
-                            j["yaw_deg"] = tools::rad2deg(scan_pos->first);
-                            j["pitch_deg"] = tools::rad2deg(scan_pos->second);
-                            plotter.plot(j);
-                        }
-
-                        gimbal.send(true, false, scan_pos->first, 0, 0, scan_pos->second, 0, 0);
-                    }
-                }
-                else {
-                    continue;
-                }
+                gimbal.send(false, false, 0, 0, 0, 0, 0, 0);
             }
         }
         is_recording_ = false;
