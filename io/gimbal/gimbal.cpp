@@ -168,15 +168,15 @@ void Gimbal::read_thread()
   int body_read_failures = 0;
 
   while (!quit_) {
-    // if (error_count > 5000) {
-    //   tools::logger()->info("[Gimbal] Final error counts: head_read_failures={}, body_read_failures={}", head_read_failures, body_read_failures);
+    if (error_count > 5000) {
+      tools::logger()->info("[Gimbal] Final error counts: head_read_failures={}, body_read_failures={}", head_read_failures, body_read_failures);
 
-    //   error_count = 0;
-    //   tools::logger()->warn("[Gimbal] Too many errors, attempting to reconnect...");
-    //   tools::logger()->warn("[Gimbal] Error summary before reconnect: head_read_failures={}, body_read_failures={}", head_read_failures, body_read_failures);
-    //   reconnect();
-    //   continue;
-    // }
+      error_count = 0;
+      tools::logger()->warn("[Gimbal] Too many errors, attempting to reconnect...");
+      tools::logger()->warn("[Gimbal] Error summary before reconnect: head_read_failures={}, body_read_failures={}", head_read_failures, body_read_failures);
+      reconnect();
+      continue;
+    }
 
     if (!read(reinterpret_cast<uint8_t *>(&rx_data_), sizeof(rx_data_.head))) {
       error_count++;
