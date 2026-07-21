@@ -8,6 +8,7 @@
 #include "tracker.hpp"
 #include "detector.hpp"
 #include "scanner.hpp"
+#include "infinite_scanner.hpp"
 #include "target.hpp"
 
 int main(int argc, char** argv) {
@@ -51,9 +52,9 @@ int main(int argc, char** argv) {
         Solver solver(config_path);
         io::Gimbal gimbal(config_path);
         Detector detector(config_path);
-        tools::Tracker tracker;
+        tools::Tracker tracker(config_path);
         solver.set_gimbal(&gimbal);
-        Scanner scanner(config_path);
+        InfiniteScanner scanner(config_path);
 
         tools::Recorder recorder(fps_);
         tools::Plotter plotter("127.0.0.1", 9870);
@@ -182,28 +183,22 @@ int main(int argc, char** argv) {
                 tracker.update(targets[0], dt);
                 const auto& ekf_data = tracker.data();
 
-                {
-                    nlohmann::json j;
-                    j["type"] = "114";
-                    j["predict_yaw"] =  tools::rad2deg(targets[0].predict_yaw);
-                    j["predict_pitch"] =  tools::rad2deg(targets[0].predict_pitch);
-                    plotter.plot(j);
-                }
-
-                // // --- plot tracker / EKF diagnostics ---
                 // {
                 //     nlohmann::json j;
-                //     j["type"] = "tracker";
-                //     j["yaw_filt_deg"] = tools::rad2deg(yaw_filt);
-                //     j["pitch_filt_deg"] = tools::rad2deg(pitch_filt);
-                //     j["yaw_raw_deg"] = tools::rad2deg(yaw_raw);
-                //     j["pitch_raw_deg"] = tools::rad2deg(pitch_raw);
-                //     j["nis"] = (ekf_data.count("nis") ? ekf_data.at("nis") : 0.0);
-                //     j["nees"] = (ekf_data.count("nees") ? ekf_data.at("nees") : 0.0);
-                //     j["nis_fail"] = (ekf_data.count("nis_fail") ? ekf_data.at("nis_fail") : 0.0);
-                //     j["nees_fail"] = (ekf_data.count("nees_fail") ? ekf_data.at("nees_fail") : 0.0);
+                //     j["type"] = "114";
+                //     j["predict_yaw"] =  tools::rad2deg(targets[0].predict_yaw);
+                //     j["predict_pitch"] =  tools::rad2deg(targets[0].predict_pitch);
                 //     plotter.plot(j);
                 // }
+
+                // --- plot tracker / EKF diagnostics ---
+                {
+                    nlohmann::json j;
+                    j["type"] = "tracker";
+                    j["yaw_filt_deg"] = tools::rad2deg(targets[0].predict_yaw);
+                    j["pitch_filt_deg"] = tools::rad2deg(targets[0].predict_pitch);
+                    plotter.plot(j);
+                }
 
                 std::cout << "Filtered - Yaw: " << tools::rad2deg(targets[0].predict_yaw)
                           << "°, Pitch: " << tools::rad2deg(targets[0].predict_pitch) << "°" << std::endl;
@@ -219,35 +214,7 @@ int main(int argc, char** argv) {
                 // std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
             } else {
-                // --- plot no-target status ---
-                {
-                    nlohmann::json j;
-                    j["type"] = "detection";
-                    j["has_target"] = false;
-                    plotter.plot(j);
-                }
-
-                if (scan_on){
-                    auto scan_pos = scanner.update(timestamp);
-                    if (scan_pos) {
-                        std::cout << "Scanning - Yaw: " << tools::rad2deg(scan_pos->first)
-                                << "°, Pitch: " << tools::rad2deg(scan_pos->second) << "°" << std::endl;
-
-                        // --- plot scan position ---
-                        {
-                            nlohmann::json j;
-                            j["type"] = "scan";
-                            j["yaw_deg"] = tools::rad2deg(scan_pos->first);
-                            j["pitch_deg"] = tools::rad2deg(scan_pos->second);
-                            plotter.plot(j);
-                        }
-
-                        gimbal.send(true, false, scan_pos->first, 0, 0, scan_pos->second, 0, 0);
-                    }
-                }
-                else {
-                    continue;
-                }
+                gimbal.send(false, false, 0, 0, 0, 0, 0, 0);
             }
         }
         is_recording_ = false;

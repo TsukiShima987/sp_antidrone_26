@@ -5,6 +5,7 @@
 #include "../io/gimbal/gimbal.hpp"
 // #include "../io/camera.hpp"
 #include "tools/plotter.hpp"
+#include "tools/math_tools.hpp"
 
 
 class Solver {
@@ -44,6 +45,16 @@ public:
         Eigen::Vector3d p_gimbal(rel_gim.x, rel_gim.y, rel_gim.z);
         auto q = gimbal->q(timestamp);
         set_R_gimbal2world(q);
+        // --- plot IMU quaternion as Euler angles ---
+        if (plotter) {
+            Eigen::Vector3d euler = tools::eulers(q, 2, 1, 0);
+            nlohmann::json j;
+            j["type"] = "imu_euler";
+            j["yaw_deg_q"] = tools::rad2deg(euler(0));
+            j["pitch_deg_q"] = tools::rad2deg(euler(1));
+            j["roll_deg_q"] = tools::rad2deg(euler(2));
+            plotter->plot(j);
+        }
         Eigen::Vector3d p_world = gimbal2world() * p_gimbal;
         std::cout << "Target position (world frame) - x: " << p_world.x() << " m, y: " << p_world.y() << " m, z: " << p_world.z() << " m" << std::endl;
 

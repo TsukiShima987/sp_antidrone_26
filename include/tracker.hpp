@@ -3,6 +3,7 @@
 #include <Eigen/Dense>
 #include <map>
 #include <memory>
+#include <string>
 #include <utility>
 #include "target.hpp"
 
@@ -12,7 +13,7 @@ class ExtendedKalmanFilter;
 
 class Tracker {
 public:
-    Tracker();
+    explicit Tracker(const std::string& config_path);
     ~Tracker();
 
     /// Update filter with a target's (yaw, pitch) measurement.
@@ -30,18 +31,23 @@ public:
 private:
     std::unique_ptr<ExtendedKalmanFilter> ekf_;
 
-    // Noise parameters
-    static constexpr double q_yaw_   = 0.35;
-    static constexpr double q_pitch_ = 0.23;
-    static constexpr double r_yaw_   = 0.003;
-    static constexpr double r_pitch_ = 0.003;
+    // Noise parameters (loaded from config)
+    double q_yaw_;
+    double q_pitch_;
+    double r_yaw_;
+    double r_pitch_;
+
+    // Delay parameters (loaded from config)
+    double calculating_delay_;
+    double excuting_delay_;
+    double adjust_delay_;
 
     // Angle-aware vector addition / subtraction
     static Eigen::VectorXd xAdd(const Eigen::VectorXd& x, const Eigen::VectorXd& delta);
     static Eigen::VectorXd zSubtract(const Eigen::VectorXd& z, const Eigen::VectorXd& hx);
 
     // Process noise covariance
-    static Eigen::MatrixXd computeQ(double dt);
+    Eigen::MatrixXd computeQ(double dt);
 
     // Observation model h(x) = [yaw, pitch]^T
     static Eigen::VectorXd observationModel(const Eigen::VectorXd& x);
