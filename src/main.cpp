@@ -89,9 +89,21 @@ int main(int argc, char** argv) {
             first_measurement = false;
 
             auto q = gimbal.q(timestamp);
+
+            // --- plot quaternion to Euler (RPY) ---
+            {
+                Eigen::Vector3d rpy = q.toRotationMatrix().eulerAngles(2, 1, 0);  // XYZ = RPY [roll, pitch, yaw]
+                nlohmann::json j;
+                j["type"] = "quat_euler";
+                j["roll_deg_q"]  = tools::rad2deg(rpy[2]);
+                j["pitch_deg_q"] = tools::rad2deg(rpy[1]);
+                j["yaw_deg_q"]   = tools::rad2deg(rpy[0]);
+                plotter.plot(j);
+            }
+
             if (is_recording_) {
-                        // video_writer_.write(frame);
-                    recorder.record(frame, q, timestamp);
+                // video_writer_.write(frame);
+                recorder.record(frame, q, timestamp);
             }
 
             // visualizer.visualizeFrame(frame, timestamp);
