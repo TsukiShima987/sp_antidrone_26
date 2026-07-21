@@ -1,5 +1,4 @@
 #include "solver.hpp"
-#include "scanner.hpp"
 #include <yaml-cpp/yaml.h>
 #include "tools/plotter.hpp"
 #include "tools/recorder.hpp"
@@ -7,8 +6,6 @@
 #include "io/camera.hpp"
 #include "tracker.hpp"
 #include "detector.hpp"
-#include "scanner.hpp"
-#include "infinite_scanner.hpp"
 #include "target.hpp"
 
 int main(int argc, char** argv) {
@@ -53,12 +50,9 @@ int main(int argc, char** argv) {
         io::Gimbal gimbal(config_path);
         Detector detector(config_path);
         tools::Tracker tracker(config_path);
-        solver.set_gimbal(&gimbal);
-        InfiniteScanner scanner(config_path);
 
         tools::Recorder recorder(fps_);
         tools::Plotter plotter("127.0.0.1", 9870);
-        solver.set_plotter(&plotter);
 
         if (start_check)
         {
@@ -90,17 +84,6 @@ int main(int argc, char** argv) {
 
             auto q = gimbal.q(timestamp);
 
-            // --- plot quaternion to Euler (RPY) ---
-            {
-                Eigen::Vector3d rpy = q.toRotationMatrix().eulerAngles(2, 1, 0);  // XYZ = RPY [roll, pitch, yaw]
-                nlohmann::json j;
-                j["type"] = "quat_euler";
-                j["roll_deg_q"]  = tools::rad2deg(rpy[2]);
-                j["pitch_deg_q"] = tools::rad2deg(rpy[1]);
-                j["yaw_deg_q"]   = tools::rad2deg(rpy[0]);
-                plotter.plot(j);
-            }
-
             if (is_recording_) {
                 // video_writer_.write(frame);
                 recorder.record(frame, q, timestamp);
@@ -118,19 +101,18 @@ int main(int argc, char** argv) {
             char key = cv::waitKey(1);
             if (key == 'q') break;
 
-
-            // // --- plot frame timing ---
-            // {
-            //     nlohmann::json j;
-            //     j["type"] = "timing";
-            //     j["dt"] = dt;
-            //     j["fps"] = (dt > 0) ? (1.0 / dt) : 0.0;
-            //     plotter.plot(j);
-            // }
-
             auto q_s = gimbal.state();
 
-            // --- plot gimbal state ---
+            // --- plot: quat_euler + gimbal_state ---
+            {
+                Eigen::Vector3d rpy = q.toRotationMatrix().eulerAngles(2, 1, 0);  // XYZ = RPY [roll, pitch, yaw]
+                nlohmann::json j;
+                j["type"] = "quat_euler";
+                j["roll_deg_q"]  = tools::rad2deg(rpy[2]);
+                j["pitch_deg_q"] = tools::rad2deg(rpy[1]);
+                j["yaw_deg_q"]   = tools::rad2deg(rpy[0]);
+                plotter.plot(j);
+            }
             {
                 nlohmann::json j;
                 j["type"] = "gimbal_state";
@@ -143,13 +125,22 @@ int main(int argc, char** argv) {
                 plotter.plot(j);
             }
 
-            std::cout << "Gimbal State - Yaw: " << tools::rad2deg(q_s.yaw)
-                      << ", Pitch: " << tools::rad2deg(q_s.pitch) << std::endl;
-
             if (!targets.empty()) {
-                scanner.reset(timestamp);
 
-                // --- plot raw detection ---
+                solver.set_R_gimbal2world(q);
+                solver.solve(targets[0]);
+
+                // 计算从相机读取到这一行的时间间隔
+                auto time_now = std::chrono::steady_clock::now();
+                double time_interval = std::chrono::duration<double>(time_now - timestamp).count();
+
+                tracker.update(targets[0], dt);
+                const auto& ekf_data = tracker.data();
+
+                // Send to gimbal
+                gimbal.send(true, false, targets[0].predict_yaw, 0, 0, targets[0].predict_pitch, 0, 0);
+
+                // --- plot: detection + aim + time_interval + tracker ---
                 {
                     const auto& t = targets[0];
                     nlohmann::json j;
@@ -169,12 +160,6 @@ int main(int argc, char** argv) {
                     j["distance"] = t.distance;
                     plotter.plot(j);
                 }
-
-                solver.solve(targets[0], timestamp);
-                std::cout << "Aiming at target - Yaw: " << tools::rad2deg(targets[0].yaw)
-                          << " degrees, Pitch: " << tools::rad2deg(targets[0].pitch) << " degrees" << std::endl;
-
-                // --- plot raw aim angles ---
                 {
                     nlohmann::json j;
                     j["type"] = "aim";
@@ -182,28 +167,12 @@ int main(int argc, char** argv) {
                     j["pitch_raw_deg"] = tools::rad2deg(targets[0].pitch);
                     plotter.plot(j);
                 }
-                // 计算从相机读取到这一行的时间间隔
-                auto time_now = std::chrono::steady_clock::now();
-                double time_interval = std::chrono::duration<double>(time_now - timestamp).count();
                 {
                     nlohmann::json j;
                     j["type"] = "time_interval";
                     j["time_interval"] = time_interval;
                     plotter.plot(j);
                 }
-
-                tracker.update(targets[0], dt);
-                const auto& ekf_data = tracker.data();
-
-                // {
-                //     nlohmann::json j;
-                //     j["type"] = "114";
-                //     j["predict_yaw"] =  tools::rad2deg(targets[0].predict_yaw);
-                //     j["predict_pitch"] =  tools::rad2deg(targets[0].predict_pitch);
-                //     plotter.plot(j);
-                // }
-
-                // --- plot tracker / EKF diagnostics ---
                 {
                     nlohmann::json j;
                     j["type"] = "tracker";
@@ -211,19 +180,6 @@ int main(int argc, char** argv) {
                     j["pitch_filt_deg"] = tools::rad2deg(targets[0].predict_pitch);
                     plotter.plot(j);
                 }
-
-                std::cout << "Filtered - Yaw: " << tools::rad2deg(targets[0].predict_yaw)
-                          << "°, Pitch: " << tools::rad2deg(targets[0].predict_pitch) << "°" << std::endl;
-
-                std::cout << "EKF Data - NIS: " << (ekf_data.count("nis") ? ekf_data.at("nis") : 0)
-                          << ", NEES: " << (ekf_data.count("nees") ? ekf_data.at("nees") : 0)
-                          << ", NIS Fail: " << (ekf_data.count("nis_fail") ? ekf_data.at("nis_fail") : 0)
-                          << ", NEES Fail: " << (ekf_data.count("nees_fail") ? ekf_data.at("nees_fail") : 0)
-                          << std::endl;
-
-                // Send to gimbal
-                gimbal.send(true, false, targets[0].predict_yaw, 0, 0, targets[0].predict_pitch, 0, 0);
-                // std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
             } else {
                 gimbal.send(false, false, 0, 0, 0, 0, 0, 0);
@@ -240,7 +196,6 @@ int main(int argc, char** argv) {
         }
 
         Detector detector(config_path);
-        Scanner scanner(config_path);
         tools::Plotter plotter("127.0.0.1", 9870);
 
         
