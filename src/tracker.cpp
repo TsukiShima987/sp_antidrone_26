@@ -1,11 +1,21 @@
 #include "include/tracker.hpp"
 #include "tools/extended_kalman_filter.hpp"
+#include <yaml-cpp/yaml.h>
 #include <cmath>
 #include <iostream>
 
 namespace tools {
 
-Tracker::Tracker() = default;
+Tracker::Tracker(const std::string& config_path) {
+    auto config = YAML::LoadFile(config_path);
+    q_yaw_              = config["tracker_q_yaw"].as<double>();
+    q_pitch_            = config["tracker_q_pitch"].as<double>();
+    r_yaw_              = config["tracker_r_yaw"].as<double>();
+    r_pitch_            = config["tracker_r_pitch"].as<double>();
+    calculating_delay_  = config["tracker_calculating_delay"].as<double>();
+    excuting_delay_     = config["tracker_excuting_delay"].as<double>();
+    adjust_delay_       = config["tracker_adjust_delay"].as<double>();
+}
 
 Tracker::~Tracker() = default;
 
@@ -45,10 +55,7 @@ void Tracker::update(UAVTarget& target, double dt) {
 
     ekf_->update(z, H, R, observationModel, zSubtract);
 
-    double calculating_delay = 0.06; // 10ms
-    double excuting_delay = 0.018; // 10ms
-    double adjust_delay = -0.0;
-    double delay = calculating_delay + excuting_delay + adjust_delay;
+    double delay = calculating_delay_ + excuting_delay_ + adjust_delay_;
 
     Eigen::VectorXd x_filt = ekf_->getState();
     target.predict_yaw = x_filt(0) + x_filt(2) * delay;

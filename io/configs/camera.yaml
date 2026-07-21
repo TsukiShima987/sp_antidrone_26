@@ -24,8 +24,8 @@ com_port: "/dev/gimbal"
 
 ##########camera参数##########
 camera_name: "hikrobot_sn"
-exposure_ms: 5
-gain: 24
+exposure_ms: 10
+gain: 23.981199
 vid_pid: "2bdf:0001"
 serial_number: "DA8290713"
 

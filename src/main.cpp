@@ -8,6 +8,7 @@
 #include "tracker.hpp"
 #include "detector.hpp"
 #include "scanner.hpp"
+#include "infinite_scanner.hpp"
 #include "target.hpp"
 
 int main(int argc, char** argv) {
@@ -51,9 +52,9 @@ int main(int argc, char** argv) {
         Solver solver(config_path);
         io::Gimbal gimbal(config_path);
         Detector detector(config_path);
-        tools::Tracker tracker;
+        tools::Tracker tracker(config_path);
         solver.set_gimbal(&gimbal);
-        Scanner scanner(config_path);
+        InfiniteScanner scanner(config_path);
 
         tools::Recorder recorder(fps_);
         tools::Plotter plotter("127.0.0.1", 9870);
@@ -101,7 +102,7 @@ int main(int argc, char** argv) {
             }
 
             if (is_recording_) {
-                        // video_writer_.write(frame);
+                // video_writer_.write(frame);
                 recorder.record(frame, q, timestamp);
             }
 
@@ -194,28 +195,22 @@ int main(int argc, char** argv) {
                 tracker.update(targets[0], dt);
                 const auto& ekf_data = tracker.data();
 
-                {
-                    nlohmann::json j;
-                    j["type"] = "114";
-                    j["predict_yaw"] =  tools::rad2deg(targets[0].predict_yaw);
-                    j["predict_pitch"] =  tools::rad2deg(targets[0].predict_pitch);
-                    plotter.plot(j);
-                }
-
-                // // --- plot tracker / EKF diagnostics ---
                 // {
                 //     nlohmann::json j;
-                //     j["type"] = "tracker";
-                //     j["yaw_filt_deg"] = tools::rad2deg(yaw_filt);
-                //     j["pitch_filt_deg"] = tools::rad2deg(pitch_filt);
-                //     j["yaw_raw_deg"] = tools::rad2deg(yaw_raw);
-                //     j["pitch_raw_deg"] = tools::rad2deg(pitch_raw);
-                //     j["nis"] = (ekf_data.count("nis") ? ekf_data.at("nis") : 0.0);
-                //     j["nees"] = (ekf_data.count("nees") ? ekf_data.at("nees") : 0.0);
-                //     j["nis_fail"] = (ekf_data.count("nis_fail") ? ekf_data.at("nis_fail") : 0.0);
-                //     j["nees_fail"] = (ekf_data.count("nees_fail") ? ekf_data.at("nees_fail") : 0.0);
+                //     j["type"] = "114";
+                //     j["predict_yaw"] =  tools::rad2deg(targets[0].predict_yaw);
+                //     j["predict_pitch"] =  tools::rad2deg(targets[0].predict_pitch);
                 //     plotter.plot(j);
                 // }
+
+                // --- plot tracker / EKF diagnostics ---
+                {
+                    nlohmann::json j;
+                    j["type"] = "tracker";
+                    j["yaw_filt_deg"] = tools::rad2deg(targets[0].predict_yaw);
+                    j["pitch_filt_deg"] = tools::rad2deg(targets[0].predict_pitch);
+                    plotter.plot(j);
+                }
 
                 std::cout << "Filtered - Yaw: " << tools::rad2deg(targets[0].predict_yaw)
                           << "°, Pitch: " << tools::rad2deg(targets[0].predict_pitch) << "°" << std::endl;
@@ -227,7 +222,7 @@ int main(int argc, char** argv) {
                           << std::endl;
 
                 // Send to gimbal
-                gimbal.send(true, false, targets[0].yaw, 0, 0, targets[0].pitch, 0, 0);
+                gimbal.send(true, false, targets[0].predict_yaw, 0, 0, targets[0].predict_pitch, 0, 0);
                 // std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
             } else {
