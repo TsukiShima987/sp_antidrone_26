@@ -1,4 +1,4 @@
-drone_engine_file: "./models/antidronev3.engine"
+drone_engine_file: "./models/antidronev5.engine"
 
 detector_option: "yolo"  # "yolo" or "uav"
 
@@ -41,6 +41,9 @@ start_check: false
 
 ##########扫描参数##########
 scan_option: true
+
+# 目标丢失超时保护: 未检测到目标超过此时间(秒)后才交由电控扫描
+target_lost_timeout_s: 1.0
 
 scan_center_yaw_deg: 17
 scan_center_pitch_deg: 3.5
