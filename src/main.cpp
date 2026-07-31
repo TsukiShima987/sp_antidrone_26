@@ -25,6 +25,8 @@ int main(int argc, char** argv) {
 
     bool scan_on = config["scan_option"].as<bool>();
     bool start_check = config["start_check"].as<bool>();
+    double target_lost_timeout_s = config["target_lost_timeout_s"] ? 
+        config["target_lost_timeout_s"].as<double>() : 0.0;
 
     // 解析命令行参数
     if (argc < 2) {
@@ -53,6 +55,11 @@ int main(int argc, char** argv) {
 
         tools::Recorder recorder(fps_);
         tools::Plotter plotter("127.0.0.1", 9870);
+
+        // 超时保护：记录最后一次检测到目标的时间和角度
+        auto last_detection_time = std::chrono::steady_clock::now();
+        float last_yaw = 0.0f;
+        float last_pitch = 0.0f;
 
         if (start_check)
         {
@@ -137,6 +144,11 @@ int main(int argc, char** argv) {
                 tracker.update(targets[0], dt);
                 const auto& ekf_data = tracker.data();
 
+                // 更新最后一次检测到目标的时间和角度
+                last_detection_time = std::chrono::steady_clock::now();
+                last_yaw = targets[0].predict_yaw;
+                last_pitch = targets[0].predict_pitch;
+
                 // Send to gimbal
                 gimbal.send(true, false, targets[0].predict_yaw, 0, 0, targets[0].predict_pitch, 0, 0);
 
@@ -182,7 +194,15 @@ int main(int argc, char** argv) {
                 }
 
             } else {
-                gimbal.send(false, false, 0, 0, 0, 0, 0, 0);
+                // 超时保护：未检测到目标时，先保持自瞄模式发送最后已知角度
+                // 超过 target_lost_timeout_s 秒后才交由电控扫描
+                double time_since_last = std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() - last_detection_time).count();
+                if (time_since_last < target_lost_timeout_s) {
+                    gimbal.send(true, false, last_yaw, 0, 0, last_pitch, 0, 0);
+                } else {
+                    gimbal.send(false, false, 0, 0, 0, 0, 0, 0);
+                }
             }
         }
         is_recording_ = false;
