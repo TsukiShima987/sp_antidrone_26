@@ -55,13 +55,13 @@ cv::Mat YOLODetector::visualize(const cv::Mat& frame,
     // Draw UAVTarget overlays
     for (const auto& target : targets) {
         cv::Scalar color(0x27, 0xC1, 0x36);  // green
-        cv::rectangle(display, target.bounding_box, color, 1);
+        cv::rectangle(display, target.bounding_box, color, 2);
 
         std::string label = cv::format("ID:%d Conf:%.2f Dist:%.1fm",
                                        target.id, target.confidence, target.distance);
         cv::putText(display, label,
                     cv::Point(target.bounding_box.x, target.bounding_box.y - 10),
-                    cv::FONT_HERSHEY_SIMPLEX, 0.5, color, 1);
+                    cv::FONT_HERSHEY_SIMPLEX, 1, color, 2);
     }
 
     cv::resize(display, display, cv::Size(1920, 1280));

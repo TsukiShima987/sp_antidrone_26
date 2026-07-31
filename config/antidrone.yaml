@@ -1,4 +1,4 @@
-drone_engine_file: "./models/antidronev3.engine"
+drone_engine_file: "./models/antidronev4.engine"
 
 detector_option: "yolo"  # "yolo" or "uav"
 
@@ -18,8 +18,8 @@ com_port: "/dev/gimbal"
 # laser_direction: [-0.00468723, -0.00218884, 0.99998662]
 
 # 27m
-laser_offset: [0.03362045536, -0.00319075302, 0]
-laser_direction: [-0.00338723, -0.00338884, 0.99998662]
+laser_offset: [0.03362045536, -0.02409075302, 0]
+laser_direction: [-0.00538723, 0.00038884, 0.99998662]
 
 
 ##########camera参数##########
@@ -35,7 +35,7 @@ distort_coeffs: [0.52339467406775086, 43.115297379766723, 0.00078266127498807922
 
 rotation_angle: 0
 
-record_video: true
+record_video: false
 
 start_check: false
 
