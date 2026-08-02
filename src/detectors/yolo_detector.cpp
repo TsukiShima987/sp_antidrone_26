@@ -74,7 +74,7 @@ std::pair<Bbox, CarBbox> YOLODetector::detectOnce(const cv::Mat& image) {
     car_bboxs.img_width = image.cols;
 
     cv::Mat rgb = image.clone();
-    cv::cvtColor(rgb, rgb, cv::COLOR_BGR2RGB);
+    //cv::cvtColor(rgb, rgb, cv::COLOR_BGR2RGB);
 
     trtyolo::Image input_image(rgb.data, rgb.cols, rgb.rows);
     trtyolo::DetectRes result = model_->predict(input_image);
