@@ -94,6 +94,15 @@ void HikRobot::read(cv::Mat & img, std::chrono::steady_clock::time_point & times
   timestamp = data.timestamp;
 }
 
+void HikRobot::setExposure(double exposure_ms)
+{
+  exposure_us_ = exposure_ms * 1e3;
+  if (capturing_) {
+    set_float_value("ExposureTime", exposure_us_);
+    tools::logger()->info("HikRobot exposure set to {:.2f} ms ({:.0f} us)", exposure_ms, exposure_us_);
+  }
+}
+
 void HikRobot::capture_start()
 {
   capturing_ = false;

@@ -28,3 +28,7 @@ cv::Mat Detector::visualize(const cv::Mat& frame,
                               const std::vector<UAVTarget>& targets) {
     return detector_->visualize(frame, targets);
 }
+
+void Detector::switchToLevel3() {
+    detector_->switchToLevel3();
+}

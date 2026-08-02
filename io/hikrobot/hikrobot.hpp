@@ -22,6 +22,7 @@ public:
     int rotation_angle = 0);
   ~HikRobot() override;
   void read(cv::Mat & img, std::chrono::steady_clock::time_point & timestamp) override;
+  void setExposure(double exposure_ms) override;
 
 private:
   struct CameraData

@@ -46,6 +46,7 @@ public:
         std::chrono::steady_clock::time_point timestamp) = 0;
     virtual cv::Mat visualize(const cv::Mat& frame,
         const std::vector<UAVTarget>& targets) = 0;
+    virtual void switchToLevel3() {}
 
 protected:
     cv::Matx33d camera_matrix;
@@ -113,9 +114,11 @@ public:
         std::chrono::steady_clock::time_point timestamp) override;
     cv::Mat visualize(const cv::Mat& frame,
         const std::vector<UAVTarget>& targets) override;
+    void switchToLevel3() override;
 
 private:
     std::shared_ptr<trtyolo::DetectModel> model_;
+    std::string level3_engine_file_;
     CarBbox last_car_bboxs_;  // cached from last detect() for visualization
 
     std::pair<Bbox, CarBbox> detectOnce(const cv::Mat& image);
@@ -134,6 +137,7 @@ public:
         std::chrono::steady_clock::time_point timestamp);
     cv::Mat visualize(const cv::Mat& frame,
         const std::vector<UAVTarget>& targets);
+    void switchToLevel3();
 
 private:
     std::unique_ptr<BaseDetector> detector_;

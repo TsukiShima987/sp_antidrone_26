@@ -1,260 +1,61 @@
-#include "solver.hpp"
 #include <yaml-cpp/yaml.h>
-#include "tools/plotter.hpp"
-#include "tools/recorder.hpp"
-#include "tools/math_tools.hpp"
-#include "io/camera.hpp"
-#include "tracker.hpp"
+#include <opencv2/opencv.hpp>
+
+#include "antidrone_node.hpp"
 #include "detector.hpp"
-#include "target.hpp"
+#include "tools/plotter.hpp"
 
-int main(int argc, char** argv) {
-    cv::Mat frame;
-
-    std::chrono::steady_clock::time_point timestamp = std::chrono::steady_clock::now();
-    std::chrono::steady_clock::time_point last_timestamp = timestamp;
-    bool first_measurement = true;
-
-    cv::namedWindow("UAV Detector - Camera", 0);
-    double fps_ = 30.0;            
-
-    std::string config_path = "config/antidrone.yaml";
-    auto config = YAML::LoadFile(config_path);
-
-    bool is_recording_ = config["record_video"].as<bool>();
-
-    bool scan_on = config["scan_option"].as<bool>();
-    bool start_check = config["start_check"].as<bool>();
-    double target_lost_timeout_s = config["target_lost_timeout_s"] ? 
-        config["target_lost_timeout_s"].as<double>() : 0.0;
-
-    // 解析命令行参数
-    if (argc < 2) {
-        std::cout << "Usage:" << std::endl;
-        std::cout << "  For camera: " << argv[0] << " camera [camera_id]" << std::endl;
-        std::cout << "  For video:  " << argv[0] << " video <video_path>" << std::endl;
-        std::cout << std::endl;
-        std::cout << "Examples:" << std::endl;
-        std::cout << "  " << argv[0] << " camera 0" << std::endl;
-        std::cout << "  " << argv[0] << " video test.mp4" << std::endl;
-        return -1;
+int main(int argc, char** argv)
+{
+    std::string mode = "camera";
+    if (argc >= 2) {
+        mode = argv[1];
     }
-    
-    std::string mode = argv[1];
-    
-    if (mode == "camera") {
-  
-        std::unique_ptr<io::Camera> camera;
-        // auto needed_file_ = std::make_unique<std::string>();
-        // *needed_file_ = config["camera_config_file"].as<std::string>();
-        camera = std::make_unique<io::Camera>(config_path);
-        Solver solver(config_path);
-        io::Gimbal gimbal(config_path);
-        Detector detector(config_path);
-        tools::Tracker tracker(config_path);
 
-        tools::Recorder recorder(fps_);
-        tools::Plotter plotter("127.0.0.1", 9870);
+    // ---- 视频模式 (离线检测，无需ROS) ----
+    if (mode == "video") {
+        std::string config_path = "config/antidrone.yaml";
+        auto config = YAML::LoadFile(config_path);
 
-        // 超时保护：记录最后一次检测到目标的时间和角度
-        auto last_detection_time = std::chrono::steady_clock::now();
-        float last_yaw = 0.0f;
-        float last_pitch = 0.0f;
-
-        if (start_check)
-        {
-            std::cout << "Sending gimbal reset command for 10 seconds..." << std::endl;
-            auto reset_start = std::chrono::steady_clock::now();
-            while (std::chrono::duration<double>(std::chrono::steady_clock::now() - reset_start).count() < 10.0) {
-                gimbal.send(1 , 1, 0, 0, 0, 0, 0, 0);
-                std::this_thread::sleep_for(std::chrono::milliseconds(50));
-            }
-            std::cout << "Gimbal reset finished. Entering main loop." << std::endl;
-        }
-
-        while (true)
-        {
-            cv::Mat frame;
-            std::chrono::steady_clock::time_point timestamp;
-            camera->read(frame, timestamp);
-            if (frame.empty()) {
-                std::cerr << "Error: Empty frame from camera" << std::endl;
-                break;
-            }
-            double dt = 0.0;
-            if (!first_measurement) {
-                dt = std::chrono::duration<double>(timestamp - last_timestamp).count();
-                if (dt > 0.1) dt = 0.1;
-            }
-            last_timestamp = timestamp;
-            first_measurement = false;
-
-            auto q = gimbal.q(timestamp);
-
-            if (is_recording_) {
-                // video_writer_.write(frame);
-                recorder.record(frame, q, timestamp);
-            }
-
-            // visualizer.visualizeFrame(frame, timestamp);
-                // 检测无人机
-            std::vector<UAVTarget> targets;
-
-            targets = detector.detect(frame, timestamp);
-            cv::Mat display = detector.visualize(frame, targets);
-            cv::resizeWindow("UAV Detector - Camera", cv::Size(1920, 1280));
-            cv::imshow("UAV Detector - Camera", display);
-
-            char key = cv::waitKey(1);
-            if (key == 'q') break;
-
-            auto q_s = gimbal.state();
-
-            // --- plot: quat_euler + gimbal_state ---
-            {
-                Eigen::Vector3d rpy = q.toRotationMatrix().eulerAngles(2, 1, 0);  // XYZ = RPY [roll, pitch, yaw]
-                nlohmann::json j;
-                j["type"] = "quat_euler";
-                j["roll_deg_q"]  = tools::rad2deg(rpy[2]);
-                j["pitch_deg_q"] = tools::rad2deg(rpy[1]);
-                j["yaw_deg_q"]   = tools::rad2deg(rpy[0]);
-                plotter.plot(j);
-            }
-            {
-                nlohmann::json j;
-                j["type"] = "gimbal_state";
-                j["yaw_deg"] = tools::rad2deg(q_s.yaw);
-                j["pitch_deg"] = tools::rad2deg(q_s.pitch);
-                j["yaw_vel"] = q_s.yaw_vel;
-                j["pitch_vel"] = q_s.pitch_vel;
-                j["bullet_speed"] = q_s.bullet_speed;
-                j["supercap_voltage"] = q_s.supercap_voltage;
-                plotter.plot(j);
-            }
-
-            if (!targets.empty()) {
-
-                solver.set_R_gimbal2world(q);
-                solver.solve(targets[0]);
-
-                // 计算从相机读取到这一行的时间间隔
-                auto time_now = std::chrono::steady_clock::now();
-                double time_interval = std::chrono::duration<double>(time_now - timestamp).count();
-
-                tracker.update(targets[0], dt);
-                const auto& ekf_data = tracker.data();
-
-                // 更新最后一次检测到目标的时间和角度
-                last_detection_time = std::chrono::steady_clock::now();
-                last_yaw = targets[0].predict_yaw;
-                last_pitch = targets[0].predict_pitch;
-
-                // Send to gimbal
-                gimbal.send(true, false, targets[0].predict_yaw, 0, 0, targets[0].predict_pitch, 0, 0);
-
-                // --- plot: detection + aim + time_interval + tracker ---
-                {
-                    const auto& t = targets[0];
-                    nlohmann::json j;
-                    j["type"] = "detection";
-                    j["has_target"] = true;
-                    j["id"] = t.id;
-                    j["confidence"] = t.confidence;
-                    j["center_x"] = t.center.x;
-                    j["center_y"] = t.center.y;
-                    j["bbox_x"] = t.bounding_box.x;
-                    j["bbox_y"] = t.bounding_box.y;
-                    j["bbox_w"] = t.bounding_box.width;
-                    j["bbox_h"] = t.bounding_box.height;
-                    j["pos_x"] = t.position.x;
-                    j["pos_y"] = t.position.y;
-                    j["pos_z"] = t.position.z;
-                    j["distance"] = t.distance;
-                    plotter.plot(j);
-                }
-                {
-                    nlohmann::json j;
-                    j["type"] = "aim";
-                    j["yaw_raw_deg"] = tools::rad2deg(targets[0].yaw);
-                    j["pitch_raw_deg"] = tools::rad2deg(targets[0].pitch);
-                    plotter.plot(j);
-                }
-                {
-                    nlohmann::json j;
-                    j["type"] = "time_interval";
-                    j["time_interval"] = time_interval;
-                    plotter.plot(j);
-                }
-                {
-                    nlohmann::json j;
-                    j["type"] = "tracker";
-                    j["yaw_filt_deg"] = tools::rad2deg(targets[0].predict_yaw);
-                    j["pitch_filt_deg"] = tools::rad2deg(targets[0].predict_pitch);
-                    plotter.plot(j);
-                }
-
-            } else {
-                // 超时保护：未检测到目标时，先保持自瞄模式发送最后已知角度
-                // 超过 target_lost_timeout_s 秒后才交由电控扫描
-                double time_since_last = std::chrono::duration<double>(
-                    std::chrono::steady_clock::now() - last_detection_time).count();
-                if (time_since_last < target_lost_timeout_s) {
-                    gimbal.send(true, false, last_yaw, 0, 0, last_pitch, 0, 0);
-                } else {
-                    gimbal.send(false, false, 0, 0, 0, 0, 0, 0);
-                }
-            }
-        }
-        is_recording_ = false;
-    }
-    else if (mode == "video") {
-        // 视频文件模式
         if (argc < 3) {
-            std::cerr << "Error: Please provide video path" << std::endl;
-            std::cout << "Usage: " << argv[0] << " video <video_path>" << std::endl;
+            std::cerr << "Usage: " << argv[0] << " video <video_path>" << std::endl;
             return -1;
         }
 
         Detector detector(config_path);
         tools::Plotter plotter("127.0.0.1", 9870);
 
-        
         std::string video_path = argv[2];
         cv::VideoCapture cap(video_path);
-        
         if (!cap.isOpened()) {
             std::cerr << "Error: Could not open video file: " << video_path << std::endl;
             return -1;
         }
-        
+
         double fps = cap.get(cv::CAP_PROP_FPS);
         int total_frames = cap.get(cv::CAP_PROP_FRAME_COUNT);
         int frame_count = 0;
-        
         std::cout << "Video mode - File: " << video_path << std::endl;
         std::cout << "FPS: " << fps << ", Total frames: " << total_frames << std::endl;
         std::cout << "Controls: SPACE - pause/resume, 'q' - quit, 's' - save frame" << std::endl;
-        
+
         bool paused = false;
-        
+        cv::Mat frame;
+
         while (true) {
             if (!paused) {
                 cap >> frame;
                 frame_count++;
-                
                 if (frame.empty()) {
                     std::cout << "End of video" << std::endl;
                     break;
                 }
-                
-                timestamp = std::chrono::steady_clock::now();
             }
-            
-            std::vector<UAVTarget> targets;
 
+            auto timestamp = std::chrono::steady_clock::now();
+            std::vector<UAVTarget> targets;
             targets = detector.detect(frame, timestamp);
 
-            // --- plot detection data (video mode) ---
             {
                 nlohmann::json j;
                 j["type"] = "detection";
@@ -287,12 +88,16 @@ int main(int argc, char** argv) {
         }
 
         cap.release();
+        cv::destroyAllWindows();
+        return 0;
     }
-    else {
-        std::cerr << "Error: Unknown mode. Use 'camera' or 'video'" << std::endl;
-        return -1;
-    }
-    
-    cv::destroyAllWindows();
+
+    // ---- 相机模式 (ROS节点，相机循环在独立线程) ----
+    rclcpp::init(argc, argv);
+    auto node = std::make_shared<AntidroneNode>();
+    node->start();  // 启动相机处理线程
+    rclcpp::spin(node);
+    rclcpp::shutdown();
+
     return 0;
 }

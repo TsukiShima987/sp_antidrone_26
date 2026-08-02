@@ -8,10 +8,30 @@ YOLODetector::YOLODetector() {
 
     std::string drone_engine_file;
     drone_engine_file = config["drone_engine_file"].as<std::string>();
+
+    level3_engine_file_ = config["level3_engine_file"] ?
+        config["level3_engine_file"].as<std::string>() : "";
+
     trtyolo::InferOption option;
     option.enableSwapRB();
     model_ = std::make_shared<trtyolo::DetectModel>(drone_engine_file, option);
     std::cout << "YOLODetector initialized" << std::endl;
+}
+
+void YOLODetector::switchToLevel3()
+{
+    if (level3_engine_file_.empty()) {
+        std::cerr << "YOLODetector::switchToLevel3: level3_engine_file not configured" << std::endl;
+        return;
+    }
+
+    // 先释放旧模型及其GPU资源，避免新引擎反序列化时CUDA显存冲突
+    model_.reset();
+
+    trtyolo::InferOption option;
+    option.enableSwapRB();
+    model_ = std::make_shared<trtyolo::DetectModel>(level3_engine_file_, option);
+    std::cout << "YOLODetector switched to level 3 model: " << level3_engine_file_ << std::endl;
 }
 
 std::vector<UAVTarget> YOLODetector::detect(const cv::Mat& frame,

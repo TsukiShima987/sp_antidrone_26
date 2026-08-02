@@ -1,4 +1,7 @@
 drone_engine_file: "./models/antidronev5.engine"
+level3_engine_file: "./models/level_3_v1.engine"  # switched via switchToLevel3()
+level3_exposure_ms: 3.0       # exposure time after switching to level 3
+level3_countdown_s: 400       # switch to level 3 when stage_remain_time < this value
 
 detector_option: "yolo"  # "yolo" or "uav"
 
@@ -24,7 +27,7 @@ laser_direction: [-0.00538723, 0.00038884, 0.99998662]
 
 ##########camera参数##########
 camera_name: "hikrobot_sn"
-exposure_ms: 1
+exposure_ms: 0.4
 gain: 23.981199
 vid_pid: "2bdf:0001"
 serial_number: "DA8290713"
@@ -36,6 +39,8 @@ distort_coeffs: [0.52339467406775086, 43.115297379766723, 0.00078266127498807922
 rotation_angle: 0
 
 record_video: false
+
+listen_game_status: false  # if true, only send gimbal commands when game_process == 4 (match in progress)
 
 start_check: false
 

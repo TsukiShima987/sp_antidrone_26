@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(UAVDetector LANGUAGES CXX CUDA)
+project(sp_antidrone_26 LANGUAGES CXX CUDA)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -67,6 +67,11 @@ find_package(nlohmann_json REQUIRED)
 find_package(fmt REQUIRED)
 find_package(spdlog REQUIRED)   # <-- added
 
+# ---- ROS 2 ----
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(radar_msgs REQUIRED)
+
 # ------------------------------------------------------------------------------
 # Include directories
 # ------------------------------------------------------------------------------
@@ -105,6 +110,7 @@ add_subdirectory(io)
 # ------------------------------------------------------------------------------
 add_executable(antidrone
     src/main.cpp
+    src/antidrone_node.cpp
     src/tracker.cpp
     src/detectors/base_detector.cpp
     src/detectors/light_bar_detector.cpp
@@ -132,3 +138,15 @@ set_target_properties(antidrone PROPERTIES
     CUDA_ARCHITECTURES "61;70;75;86"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
 )
+
+ament_target_dependencies(antidrone
+    rclcpp
+    radar_msgs
+)
+
+install(TARGETS
+    antidrone
+    DESTINATION lib/${PROJECT_NAME}
+)
+
+ament_package()
