@@ -21,7 +21,7 @@ com_port: "/dev/gimbal"
 # laser_direction: [-0.00468723, -0.00218884, 0.99998662]
 
 # 27m
-laser_offset: [0.03362045536, -0.02409075302, 0]
+laser_offset: [0.01612045536, -0.01259075302, 0]
 laser_direction: [-0.00538723, 0.00038884, 0.99998662]
 
 
@@ -44,28 +44,8 @@ listen_game_status: true  # if true, only send gimbal commands when game_process
 
 start_check: false
 
-##########扫描参数##########
-scan_option: true
-
 # 目标丢失超时保护: 未检测到目标超过此时间(秒)后才交由电控扫描
 target_lost_timeout_s: 1.0
-
-scan_center_yaw_deg: 17
-scan_center_pitch_deg: 3.5
-scan_yaw_step_deg: 0.05
-scan_pitch_step_deg: 1
-scan_cols: 400
-scan_rows: 5
-scan_timeout_ms: 1000
-
-##########∞形扫描参数 (Lissajous 1:2)##########
-inf_scan_center_yaw_deg: 26
-inf_scan_center_pitch_deg: 4
-inf_scan_amp_yaw_deg: 15
-inf_scan_amp_pitch_deg: 10
-inf_scan_period_s: 10.0             # ∞ 扫描周期 [秒]
-inf_scan_phase_deg: 45
-inf_scan_timeout_ms: 1000
 
 ##########跟踪器Kalman滤波器参数##########
 tracker_q_yaw: 0.0035
