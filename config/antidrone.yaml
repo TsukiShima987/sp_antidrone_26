@@ -38,9 +38,9 @@ distort_coeffs: [0.52339467406775086, 43.115297379766723, 0.00078266127498807922
 
 rotation_angle: 0
 
-record_video: false
+record_video: true
 
-listen_game_status: false  # if true, only send gimbal commands when game_process == 4 (match in progress)
+listen_game_status: true  # if true, only send gimbal commands when game_process == 4 (match in progress)
 
 start_check: false
 
