@@ -1,7 +1,7 @@
 drone_engine_file: "./models/antidronev5.engine"
 level3_engine_file: "./models/level_3_v1.engine"  # switched via switchToLevel3()
-level3_exposure_ms: 3.0       # exposure time after switching to level 3
-level3_countdown_s: 400       # switch to level 3 when stage_remain_time < this value
+level3_exposure_ms: 30.0       # exposure time after switching to level 3
+level3_countdown_s: 180       # switch to level 3 when stage_remain_time < this value
 
 detector_option: "yolo"  # "yolo" or "uav"
 
