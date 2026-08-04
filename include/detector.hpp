@@ -6,9 +6,10 @@
 #include <string>
 #include <memory>
 #include <chrono>
+#include <fstream>
 #include "target.hpp"
 #include "../tools/solver.hpp"
-#include "../TensorRT-YOLO/include/trtyolo.hpp"
+#include "trtyolo.hpp"
 #include <Eigen/Dense>
 #include <optional>
 
@@ -48,6 +49,17 @@ public:
         const std::vector<UAVTarget>& targets) = 0;
     virtual void switchToLevel3() {}
 
+    // --- 激光标定 API ---
+    /// 调整激光方向：d_pitch 绕相机X轴(上下)，d_yaw 绕相机Y轴(左右)，单位弧度
+    void adjustLaserDirection(double d_pitch, double d_yaw);
+    /// 获取当前激光方向（用于显示）
+    Eigen::Vector3d getLaserDirection() const { return d0; }
+    Eigen::Vector3d getLaserOffset()      const { return S0; }
+    /// 保存当前 d0, S0 到标定文件
+    bool saveCalibration(const std::string& calib_path);
+    /// 从指定路径重新加载激光参数
+    void reloadLaserParams(const std::string& config_path);
+
 protected:
     cv::Matx33d camera_matrix;
     cv::Mat dist_coeffs;
@@ -58,6 +70,7 @@ protected:
     Eigen::Vector3d S0;   // laser position in camera frame (meters)
     Eigen::Vector3d d0;   // laser direction in camera frame (unit vector)
     int next_id = 0;
+    std::string calib_path_ = "config/antidrone_calibrated.yaml";  // 标定覆盖文件
 
     void estimatePose(UAVTarget& target, float pixel_spacing, float real_size,
         const cv::Point2f& center);
@@ -138,6 +151,18 @@ public:
     cv::Mat visualize(const cv::Mat& frame,
         const std::vector<UAVTarget>& targets);
     void switchToLevel3();
+
+    // --- 激光标定透传 ---
+    void adjustLaserDirection(double d_pitch, double d_yaw) {
+        detector_->adjustLaserDirection(d_pitch, d_yaw);
+    }
+    Eigen::Vector3d getLaserDirection() const { return detector_->getLaserDirection(); }
+    bool saveCalibration(const std::string& calib_path) {
+        return detector_->saveCalibration(calib_path);
+    }
+    void reloadLaserParams(const std::string& config_path) {
+        detector_->reloadLaserParams(config_path);
+    }
 
 private:
     std::unique_ptr<BaseDetector> detector_;

@@ -91,6 +91,10 @@ void AntidroneNode::cameraLoop()
     float last_yaw = 0.0f;
     float last_pitch = 0.0f;
 
+    // 激光标定模式状态
+    bool calib_mode = false;
+    const double calib_step = 0.0002;  // 每次按键调整约 0.011°
+
     if (start_check) {
         RCLCPP_INFO(this->get_logger(), "Sending gimbal reset command for 10 seconds...");
         auto reset_start = std::chrono::steady_clock::now();
@@ -140,10 +144,63 @@ void AntidroneNode::cameraLoop()
         targets = detector.detect(frame, timestamp);
         cv::Mat display = detector.visualize(frame, targets);
         cv::resizeWindow("UAV Detector - Camera", cv::Size(1920, 1280));
+
+        // ---- 标定模式视觉提示 ----
+        if (calib_mode) {
+            auto d = detector.getLaserDirection();
+            std::string info = cv::format("CALIB MODE | d0: [%.6f, %.6f, %.6f] | Step: %.4f rad",
+                                          d.x(), d.y(), d.z(), calib_step);
+            cv::putText(display, info, cv::Point(10, 30),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 0, 255), 2);
+            cv::putText(display, "Arrows: adjust | Enter: save | ESC: discard",
+                        cv::Point(10, 65), cv::FONT_HERSHEY_SIMPLEX, 0.6,
+                        cv::Scalar(0, 255, 255), 2);
+        }
+
         cv::imshow("UAV Detector - Camera", display);
 
+        // ---- 键盘处理 ----
         char key = cv::waitKey(1);
-        if (key == 'q') break;
+
+        if (calib_mode) {
+            switch (key) {
+                case 81:  // 左箭头
+                    detector.adjustLaserDirection(0, +calib_step);
+                    break;
+                case 83:  // 右箭头
+                    detector.adjustLaserDirection(0, -calib_step);
+                    break;
+                case 82:  // 上箭头
+                    detector.adjustLaserDirection(-calib_step, 0);
+                    break;
+                case 84:  // 下箭头
+                    detector.adjustLaserDirection(+calib_step, 0);
+                    break;
+                case 13:  // Enter: 保存并退出标定
+                case 10:
+                    detector.saveCalibration("config/antidrone_calibrated.yaml");
+                    calib_mode = false;
+                    RCLCPP_INFO(this->get_logger(),
+                        "Laser calibration saved to antidrone_calibrated.yaml");
+                    break;
+                case 27:  // ESC: 放弃标定，恢复原始值
+                    detector.reloadLaserParams("config/antidrone.yaml");
+                    calib_mode = false;
+                    RCLCPP_INFO(this->get_logger(),
+                        "Laser calibration discarded, restored original values");
+                    break;
+                default:
+                    break;
+            }
+        } else {
+            if (key == 'a') {
+                calib_mode = true;
+                RCLCPP_INFO(this->get_logger(),
+                    "Entered laser calibration mode. Arrows: adjust | Enter: save | ESC: discard");
+            } else if (key == 'q') {
+                break;
+            }
+        }
 
         auto q_s = gimbal.state();
 
