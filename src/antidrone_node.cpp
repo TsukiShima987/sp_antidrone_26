@@ -110,9 +110,10 @@ void AntidroneNode::cameraLoop()
     while (!quit_)
     {
         // level-3 切换：比赛剩余时间不足时，切换曝光和模型（仅触发一次）
-        if (level3_triggered_.load()) {
+        if (level3_triggered_.load() && !level3_applied_) {
             camera->setExposure(level3_exposure_ms_);
             detector.switchToLevel3();
+            level3_applied_ = true;
             RCLCPP_INFO(this->get_logger(),
                 "Level-3 applied: exposure=%.1f ms, model switched", level3_exposure_ms_);
         }
@@ -289,7 +290,11 @@ void AntidroneNode::cameraLoop()
                 std::chrono::steady_clock::now() - last_detection_time).count();
             if (time_since_last < target_lost_timeout_s) {
                 gimbal.send(true, false, last_yaw, 0, 0, last_pitch, 0, 0);
-            } else {
+            } 
+            else if (level3_triggered_.load()){
+                gimbal.send(true, true, 0, 0, 0, 0, 0, 0);
+            }
+            else {
                 gimbal.send(false, false, 0, 0, 0, 0, 0, 0);
             }
         }
