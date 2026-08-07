@@ -1,6 +1,6 @@
 drone_engine_file: "./models/antidronev5.engine"
-level3_engine_file: "./models/level_3_v1.engine"  # switched via switchToLevel3()
-level3_exposure_ms: 20.0       # exposure time after switching to level 3
+level3_engine_file: "./models/level_3_v4.engine"  # switched via switchToLevel3()
+level3_exposure_ms: 15.0       # exposure time after switching to level 3
 level3_countdown_s: 180       # switch to level 3 when stage_remain_time < this value
 
 detector_option: "yolo"  # "yolo" or "uav"
@@ -21,8 +21,8 @@ com_port: "/dev/gimbal"
 # laser_direction: [-0.00468723, -0.00218884, 0.99998662]
 
 # 27m
-laser_offset: [0.01612045536, -0.01259075302, 0]
-laser_direction: [-0.00638723, 0.00038884, 0.99998662]
+laser_offset: [0.016120455360000001, -0.020447753020000001, 0]
+laser_direction: [-0.0065871799029547998, 0.00056740732635860705, 0.99997814331606871]
 
 
 ##########camera参数##########
