@@ -180,11 +180,11 @@ Blender 文件存放在 `render` 文件夹中，建议使用 Blender 5\.2\.0 版
 
 # 不共轴相机与激光笔
 
-相机光轴与激光笔不共轴：激光在相机坐标系下存在平移偏移$\mathbf{S}_0$（`laser_offset`）与方向$\mathbf{d}_0$（`laser_direction`），无法直接用相机光心射线近似。
+相机光轴与激光笔不共轴：激光在相机坐标系下存在平移偏移 $\mathbf{S}_0$ （`laser_offset`）与方向 $\mathbf{d}_0$ （`laser_direction`），无法直接用相机光心射线近似。
 
 ## 数学模型
 
-**位姿估计（相似三角形）：** 设相机内参$f_x, f_y, c_x, c_y$，目标真实尺寸$H_{real}$，像素高度$h_{pixel}$，则：
+**位姿估计（相似三角形）：** 设相机内参 $f_x, f_y, c_x, c_y$ ，目标真实尺寸 $H_{real}$ ，像素高度 $h_{pixel}$ ，则：
 
 $$
 z = \frac{f_y \cdot H_{real}}{h_{pixel}}, \quad
@@ -192,56 +192,56 @@ x = \frac{(u - c_x)\, z}{f_x}, \quad
 y = \frac{(v - c_y)\, z}{f_y}
 $$
 
-得到目标在相机坐标系的坐标$\mathbf{p}_{cam}$。
+得到目标在相机坐标系的坐标 $\mathbf{p}_{cam}$ 。
 
-**激光瞄准点求解：** 目标绕云台旋转$\mathbf{R}$后应该落在激光射线上，约束为：
+**激光瞄准点求解：** 目标绕云台旋转 $\mathbf{R}$ 后应该落在激光射线上，约束为：
 
 $$\mathbf{R}(a, t)^{T}\,\mathbf{p}_{cam} \;=\; \mathbf{S}_0 + \lambda\,\mathbf{d}_0$$
 
-两侧对$\mathbf{d}_0$做叉乘消去$\lambda$，得到二维残差：
+两侧对 $\mathbf{d}_0$ 做叉乘消去 $\lambda$ ，得到二维残差：
 
 $$\mathbf{r}(a, t) = \left[\left(\mathbf{R}(a,t)^{T}\,\mathbf{p}_{cam} - \mathbf{S}_0\right) \times \mathbf{d}_0\right]_{1:2}$$
 
-其中旋转用轴角参数化$\mathbf{R}(a,t)=\mathrm{Rot}(t,\;[\cos a,\ \sin a,\ 0]^T)$。代码中采用【多初值种子\+牛顿迭代\+Armijo回溯线搜索】求解$(a, t)$，并加入距离自适应的角度容差校验；求解失败时退化为小角度近似。最终瞄准方向为$\mathbf{R}\,\mathbf{e}_z$，瞄准点为该方向乘以目标距离。
+其中旋转用轴角参数化 $\mathbf{R}(a,t)=\mathrm{Rot}(t,\;[\cos a,\ \sin a,\ 0]^T)$ 。代码中采用【多初值种子\+牛顿迭代\+Armijo回溯线搜索】求解 $(a, t)$ ，并加入距离自适应的角度容差校验；求解失败时退化为小角度近似。最终瞄准方向为 $\mathbf{R}\,\mathbf{e}_z$ ，瞄准点为该方向乘以目标距离。
 
 ## 外参的标定、粗调与精调
 
 **程序化标定：** 用圆点标定板在多距离/多位姿下自动采样激光落点的3D坐标，拟合成相机系下的激光直线，直接解出偏移和方向：
 
-- 标定板平面求解：`cv2.findCirclesGrid`检测圆点网格（$7\times10$、间距$40\ \mathrm{mm}$），`cv2.solvePnP`求标定板在相机系下的平面方程，得法向量$\mathbf{n}_c$与常量$d_c$（满足 $\mathbf{n}_c^T\mathbf{x}+d_c=0$）。
+- 标定板平面求解：`cv2.findCirclesGrid`检测圆点网格（ $7\times10$ 、间距 $40\ \mathrm{mm}$ ），`cv2.solvePnP`求标定板在相机系下的平面方程，得法向量 $\mathbf{n}_c$ 与常量 $d_c$ （满足 $\mathbf{n}_c^T\mathbf{x}+d_c=0$ ）。
 
-- 激光点定位：HSV阈值提取红色激光点质心（或手动点击标记），得像素坐标$\mathbf{u}=(u,v,1)^T$。
+- 激光点定位：HSV阈值提取红色激光点质心（或手动点击标记），得像素坐标 $\mathbf{u}=(u,v,1)^T$ 。
 
-- 射线\-平面求交：反投影射线$\mathbf{r}=K^{-1}\mathbf{u}$，与标定板平面求交得3D激光点
+- 射线\-平面求交：反投影射线 $\mathbf{r}=K^{-1}\mathbf{u}$ ，与标定板平面求交得3D激光点
 
 $$\mathbf{S}_0 = \bar{\mathbf{p}} - \frac{\bar{p}_z}{d_{0,z}}\,\mathbf{d}_0$$
 
 - 多距离采样：移动标定板，在多个距离/位姿重复1–3步，收集不少于9个3D激光点。
 
-- SVD直线拟合：对去质心点集做 SVD，取主奇异向量为直线方向$\mathbf{d}_0$（必要时按$d_{0,z}>0$规范化符号）；直线与$z=0$平面的交点即偏移
+- SVD直线拟合：对去质心点集做 SVD，取主奇异向量为直线方向 $\mathbf{d}_0$ （必要时按 $d_{0,z}>0$ 规范化符号）；直线与 $z=0$ 平面的交点即偏移
 
 $$\mathbf{S}_0 = \bar{\mathbf{p}} - \frac{\bar{p}_z}{d_{0,z}}\,\mathbf{d}_0$$
 
 - 重投影验证：沿拟合直线按1–20m采样并`cv2.projectPoints`重投影回图像，与真实激光点对照校验误差。
 
-拟合结果即为`laser_direction`（$\mathbf{d}_0$）与`laser_offset`（$\mathbf{S}_0$）
+拟合结果即为`laser_direction`（ $\mathbf{d}_0$ ）与`laser_offset`（ $\mathbf{S}_0$ ）
 
-**粗调（键盘微调）：** 运行`antidrone camera`后按`a`进入标定模式，方向键微调激光方向（步长约$2\times10^{-4}$ rad），`Enter`保存到`config/antidrone_calibrated.yaml`，`ESC`回退。
+**粗调（键盘微调）：** 运行`antidrone camera`后按`a`进入标定模式，方向键微调激光方向（步长约 $2\times10^{-4}$ rad），`Enter`保存到`config/antidrone_calibrated.yaml`，`ESC`回退。
 
 - 启动时会优先加载`antidrone_calibrated.yaml`覆盖原始标定，删除该文件即可重置。
 
-**精调（双距离相似三角形标定）：** 人为测量短距离$d_1$（如15m）与长距离$d_2$（如28m）下，激光落点相对目标中心的实际偏差$\delta_1$、$\delta_2$（单位$\mathrm{m}$，$x$、$y$ 各测一维）。设当前标定为偏移$S$ 与方向角 $\theta$（激光方向在 $x/y$ 平面内与光轴的夹角），则距离$d$处的偏差由偏移项（不随距离变化）与方向项（随距离线性增长）叠加：
+**精调（双距离相似三角形标定）：** 人为测量短距离 $d_1$ （如15m）与长距离 $d_2$ （如28m）下，激光落点相对目标中心的实际偏差 $\delta_1$ 、 $\delta_2$ （单位 $\mathrm{m}$ ， $x$ 、 $y$ 各测一维）。设当前标定为偏移 $S$ 与方向角 $\theta$ （激光方向在 $x/y$ 平面内与光轴的夹角），则距离 $d$ 处的偏差由偏移项（不随距离变化）与方向项（随距离线性增长）叠加：
 
 $$\delta(d) = S + d\tan\theta$$
 
-由两次测量的偏差直线斜率$\tan\theta=\dfrac{\delta_2-\delta_1}{d_2-d_1}$。为让短、长距离下激光落点都落在目标中心（使该直线归零），offset与direction需要同时加/减的修正量为：
+由两次测量的偏差直线斜率 $\tan\theta=\dfrac{\delta_2-\delta_1}{d_2-d_1}$ 。为让短、长距离下激光落点都落在目标中心（使该直线归零），offset与direction需要同时加/减的修正量为：
 
 $$
 \Delta\theta = -\arctan\left(\frac{\delta_2-\delta_1}{d_2-d_1}\right),\qquad
 \Delta S = -\delta_1 + d_1\,\frac{\delta_2-\delta_1}{d_2-d_1}
 $$
 
-$x$、$y$ 方向分别计算（约定 $\delta>0$ 表示激光落点位于目标中心的正 $x/y$ 侧）。将 $\theta\leftarrow\theta+\Delta\theta$（据此更新方向向量 $\mathbf{d}_0$）、$S\leftarrow S+\Delta S$ 写回配置即可完成精调。
+$x$ 、 $y$ 方向分别计算（约定 $\delta>0$ 表示激光落点位于目标中心的正 $x/y$ 侧）。将 $\theta\leftarrow\theta+\Delta\theta$ （据此更新方向向量 $\mathbf{d}_0$ ）、 $S\leftarrow S+\Delta S$ 写回配置即可完成精调。
 
 # 未来优化方向
 
@@ -253,9 +253,9 @@ $x$、$y$ 方向分别计算（约定 $\delta>0$ 表示激光落点位于目标�
 
 # 参考文献
 
-\[1\]XiaoYoung\.【RM2025\-自瞄算法开源】同济大学SuperPower战队\[EB/OL\]\. RoboMaster论坛\. https://bbs\.robomaster\.com/article/803315 2025\.
+[1] XiaoYoung. 【RM2025-自瞄算法开源】同济大学SuperPower战队[EB/OL]. RoboMaster论坛. https://bbs.robomaster.com/article/803315 2025.
 
-\[2\] sirvir\. 【RM2025\-能量机关数据集】香港科技大学ENTERPRIZE战队能量机关仿真数据集研究\[EB/OL\]\. RoboMaster论坛\. https://bbs\.robomaster\.com/article/714430 2025\.
+[2] sirvir. 【RM2025-能量机关数据集】香港科技大学ENTERPRIZE战队能量机关仿真数据集研究[EB/OL]. RoboMaster论坛. https://bbs.robomaster.com/article/714430 2025.
 
 
 
