@@ -46,7 +46,7 @@
 
 ## 编译方式及运行
 
-1. 先克隆sp\_radar\_26，再克隆本仓库，放在sp\_radar\_26/src/目录下（因为编译需要sp\_radar\_26的自定义消息包）
+1. 先克隆[sp\_radar\_26](https://github.com/TongjiSuperPower/sp_radar_26)，再克隆本仓库，放在sp\_radar\_26/src/目录下（因为编译需要sp\_radar\_26的自定义消息包）
 
 2. 安装依赖：
 
